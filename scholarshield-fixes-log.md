@@ -65,3 +65,50 @@ The report now states its own risks (equity, validation, legal, scope, data-sour
 
 ## Net effect (Round 2)
 The project is back to a two-ecosystem build (TypeScript + Python) with a credible 4–6 week estimate, signal #4 is a firm yes backed by a real cited dataset instead of a maybe, the certificate-verification adapter is demo-safe by design rather than by luck, and the equity claim in §3.3 now points to a specific, nameable, independently-runnable test suite instead of a general assurance.
+
+---
+
+## Round 3 — 2026-08-23
+
+Report rewritten as `PROJECT_REPORT.md` (v3). `prancy-purring-kurzweil.md` retired — its content is fully superseded and preserved in git history at commit `a625d97`.
+
+### 1. Promoted cross-application consistency to the core product
+**Problem:** §1 identified the gap as "nothing cross-references applications against each other," then buried cross-application consistency as signal #3 of 5 while OCR/ELA — the fragile, undifferentiated parts — got the whole Python service and two weeks. The thesis and the build order disagreed.
+**Fix:** Signals restructured into explicit tiers. Tier 1 is now a **household reconciliation graph**: field normalization, `pg_trgm` fuzzy entity resolution, connected-component household detection, and five named contradiction rules with stated weights. Everything else is Tier 2-5 corroboration. Build order follows: Tier 1 ships Week 2, not Week 4.
+
+### 2. Replaced the circularity admission with actual mechanisms
+**Problem:** Rounds 1-2 admitted the rule engine was validated only against synthetic data matching its own patterns, and stopped there. An admission is not a fix, and the equity suite added in Round 2 had the identical flaw it was meant to solve.
+**Fix:** New §7 with three mechanisms, each producing a number: (a) **sealed holdout patterns** — `patterns.holdout.ts` authored and committed in Week 1 before any rule code exists, with git history as proof, giving a non-circular recall figure; (b) **document realism pipeline** — rotation, perspective warp, illumination gradient, noise, JPEG recompression applied before OCR ever sees a document; (c) **tamper generation decoupled from detection**, plus an untampered-but-recompressed control group that yields a measured ELA false-positive rate.
+**Also:** §6 now states plainly that the equity suite shares an author with the rules, and what does and doesn't narrow that gap.
+
+### 3. Added a published metrics contract
+**Problem:** No stated success criteria — nothing that could come out unflattering and be seen to have done so.
+**Fix:** New §8 naming seven metrics up front: precision@k, queue lift, holdout recall vs. known recall (the gap between them being the overfitting measure), ELA false-positive rate, OCR field accuracy on degraded documents, and equity pass rate. Computed by `npm run metrics`, written into the README by script so documented numbers are generated rather than hand-typed.
+
+### 4. Cut the VerifyCerti scraper, kept the adapter
+**Problem:** Round 2 correctly demoted automated scraping to optional but still budgeted Week 3 for building it — a week against a portal flagged as both ToS-ambiguous and probably CAPTCHA-blocked. The mitigation ("record a screen capture of it succeeding once") was fragile and a strange artifact to produce.
+**Fix:** No scraping adapter is built at all. `CertificateVerificationAdapter` ships with `ManualLinkAdapter` (default) and `MockStateAdapter` (fixtures). The pluggable-per-state architecture story survives intact, legal exposure drops to zero, and the reclaimed week goes to Tier 1.
+
+### 5. Fixed the unit mismatch in the locality signal
+**Problem:** Signal #4 compared a **household** income certificate against a **per-capita** district figure. Different units — the comparison was meaningless, and a ₹72k household in a district averaging ₹1.5L per-capita is unremarkable for a genuinely poor family.
+**Fix:** Declared household income is divided by declared family size and compared per-capita to per-capita, firing only on a wide multiple. Weight capped low; named first in the cut order.
+
+### 6. Restored a realistic timeline
+**Problem:** Round 2 shrank 6-8 weeks back to 4-6 because Java was dropped — but that removed learning curve, not scope. Three services, five signals, dashboard, auth, seed generator and deploy was the same pile. Removing the buffer week was a regression.
+**Fix:** **6 weeks core + 1 buffer**, with the Tier-1 engine front-loaded to Week 2 and a stated cut order that protects the core path (Tier 4 locality → Tier 5 tips → household graph visualization, engine retained).
+
+### 7. Filled the design gaps
+**Problem:** Five things were never specified: document storage, the auth model, retention, pipeline failure semantics, and tip-form abuse.
+**Fix:**
+- **Storage:** MinIO locally / S3-R2 in deploy; short-TTL signed URLs, never a public bucket, never Postgres blobs.
+- **Auth:** two personas — applicants via passwordless magic link scoped to one application; reviewers/admins invite-only with RBAC. Scores and flags never appear on applicant-facing endpoints, enforced at the serializer with a test asserting it.
+- **Retention:** documents purged a configured interval after terminal decision via scheduled job; `audit_log` keeps decision, reason, reviewer, and document hash — never the document.
+- **Pipeline:** idempotent handlers keyed on `(document_id, stage)`, per-stage result persistence so retries resume rather than restart, exponential backoff, and a dead-letter queue surfaced in the admin UI. Stage 4 re-runs for every application in an affected household component when a new application joins it.
+- **Tips:** per-IP and global rate limits, hashed-IP retention only, capped scoring weight, reviewer-markable as abusive.
+
+### 8. Added a threat model and voice rewrite
+**Problem:** No security section at all; and the report was written in third person about "the user," reading as a document authored *for* the project owner rather than *by* them.
+**Fix:** New §11 threat model table (malicious upload, application enumeration, score leakage, tip abuse, out-of-process reviewer action, rule tampering). Whole document rewritten in first person / product voice, ready to become a README. Also added to §14: real deployment would need DPDP Act review, an institutional data-processing agreement, and an applicant appeals mechanism — none in scope, and the README will say so.
+
+## Net effect (Round 3)
+The differentiated engine is now the centre of the project rather than a footnote, the honesty about validation has been converted from disclaimers into measured numbers with a git-provable methodology, the one legally ambiguous component is gone with its architecture story intact, and the five unspecified subsystems (storage, auth, retention, failure semantics, abuse) are specified. The timeline reflects the actual scope.
