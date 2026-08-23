@@ -1,0 +1,22 @@
+node_modules/
+dist/
+build/
+.next/
+out/
+coverage/
+
+.env
+.env.local
+.env.*.local
+
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+.turbo/
+.vercel/
+*.tsbuildinfo
+
+# Generated synthetic corpus — regenerate with `npm run seed`
+db/seed/output/
