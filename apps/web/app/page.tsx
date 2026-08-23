@@ -41,8 +41,12 @@ export default function HomePage() {
       <div className="card">
         <h2>Status</h2>
         <p>
-          Week 1 scaffold. Schema, auth, and the applicant/reviewer boundary are in place; the
-          household reconciliation engine lands next.
+          <span className="stamp">Week 2 · in progress</span>
+        </p>
+        <p>
+          Schema, auth, and the applicant/reviewer boundary are in place. Identity normalization —
+          the input layer of the household engine — is built and tested. Fuzzy resolution and the
+          contradiction rules land next.
         </p>
       </div>
     </>

@@ -1,15 +1,47 @@
+/* ScholarShield — neo-brutalist theme.
+ *
+ * Hard borders, hard shadows, no blur, no gradients, no rounding. The visual
+ * language is a government form crossed with a warning label, which is roughly
+ * what this tool is: institutional, blunt, and legible at a glance under time
+ * pressure. Severity is carried by solid colour blocks rather than subtle tints,
+ * because a reviewer scanning a queue needs the high-severity rows to be
+ * unmissable, not tasteful.
+ *
+ * No web fonts — system stacks only, so the page renders identically offline and
+ * has nothing to block on.
+ */
+
 :root {
-  --bg: #fbfaf8;
-  --surface: #ffffff;
-  --border: #e4e0da;
-  --text: #1c1a17;
-  --muted: #6b665e;
-  --accent: #8a4b2a;
-  --accent-soft: #f3ece7;
-  --high: #a3341f;
-  --medium: #9a6b12;
-  --low: #4a6b52;
-  --radius: 10px;
+  --ink: #0b0b0b;
+  --paper: #f4efe3;
+  --surface: #fffdf6;
+
+  --accent: #ffd93d;
+  --accent-alt: #3d5aff;
+
+  --high: #ff3b21;
+  --medium: #ff9f1c;
+  --low: #00b464;
+
+  --border-width: 3px;
+  --border: var(--border-width) solid var(--ink);
+  --shadow: 6px 6px 0 var(--ink);
+  --shadow-sm: 4px 4px 0 var(--ink);
+  --shadow-press: 2px 2px 0 var(--ink);
+
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Consolas, monospace;
+  --sans: "Helvetica Neue", Helvetica, Arial, ui-sans-serif, system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #f4efe3;
+    --paper: #121212;
+    --surface: #1c1c1c;
+    --shadow: 6px 6px 0 var(--ink);
+    --shadow-sm: 4px 4px 0 var(--ink);
+    --shadow-press: 2px 2px 0 var(--ink);
+  }
 }
 
 * {
@@ -23,146 +55,364 @@ body {
 }
 
 body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  line-height: 1.55;
-  -webkit-font-smoothing: antialiased;
-}
-
-a {
-  color: var(--accent);
+  background: var(--paper);
+  /* Faint grid, so the page reads as ruled paper rather than a blank void. */
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--ink) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--ink) 7%, transparent) 1px, transparent 1px);
+  background-size: 28px 28px;
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.5;
 }
 
 .shell {
-  max-width: 1080px;
+  max-width: 1120px;
   margin: 0 auto;
-  padding: 2rem 1.5rem 4rem;
+  padding: 2.5rem 1.25rem 5rem;
 }
 
+/* ---------------------------------------------------------------- masthead */
+
 .masthead {
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 2rem;
-  padding-bottom: 1.25rem;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
+  margin-bottom: 2.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: var(--border-width) solid var(--ink);
 }
 
 .masthead h1 {
-  font-size: 1.25rem;
   margin: 0;
-  letter-spacing: -0.01em;
+  font-size: 1.05rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  background: var(--ink);
+  color: var(--paper);
+  padding: 0.5rem 0.85rem;
+  border: var(--border);
+  box-shadow: var(--shadow-sm);
 }
 
 .masthead nav {
   display: flex;
-  gap: 1.25rem;
-  font-size: 0.9rem;
+  gap: 0.65rem;
+  flex-wrap: wrap;
 }
+
+.masthead nav a {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--ink);
+  background: var(--surface);
+  padding: 0.45rem 0.8rem;
+  border: var(--border);
+  box-shadow: var(--shadow-press);
+  transition: transform 60ms linear, box-shadow 60ms linear, background 60ms linear;
+}
+
+.masthead nav a:hover {
+  background: var(--accent);
+  transform: translate(-2px, -2px);
+  box-shadow: var(--shadow-sm);
+}
+
+.masthead nav a:active {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+
+/* ---------------------------------------------------------------- blocks */
 
 .card {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1.5rem;
-  margin-bottom: 1.25rem;
+  border: var(--border);
+  box-shadow: var(--shadow);
+  padding: 1.75rem;
+  margin-bottom: 2rem;
+}
+
+.card h2 {
+  margin: 0 0 1rem;
+  font-size: 1.15rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  /* Underscore rule, like a form section header. */
+  border-bottom: var(--border-width) solid var(--ink);
+  padding-bottom: 0.5rem;
+}
+
+.card p {
+  margin: 0 0 1rem;
+}
+
+.card p:last-child,
+.card ol:last-child,
+.card ul:last-child {
+  margin-bottom: 0;
+}
+
+.card ol,
+.card ul {
+  margin: 0 0 1rem;
+  padding-left: 1.25rem;
+}
+
+.card li {
+  margin-bottom: 0.4rem;
 }
 
 .notice {
-  background: var(--accent-soft);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
-  border-radius: var(--radius);
-  padding: 1rem 1.25rem;
-  font-size: 0.925rem;
-  margin-bottom: 1.5rem;
+  background: var(--accent);
+  color: #0b0b0b;
+  border: var(--border-width) solid #0b0b0b;
+  box-shadow: 6px 6px 0 #0b0b0b;
+  padding: 1.1rem 1.35rem;
+  margin-bottom: 2rem;
+  font-size: 0.95rem;
 }
+
+.notice strong {
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ---------------------------------------------------------------- forms */
 
 .field {
   display: grid;
-  gap: 0.35rem;
-  margin-bottom: 1rem;
+  gap: 0.4rem;
+  margin-bottom: 1.35rem;
 }
 
 .field label {
-  font-size: 0.85rem;
-  font-weight: 600;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
 }
 
 .field input,
 .field select {
-  font: inherit;
-  padding: 0.55rem 0.7rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  padding: 0.65rem 0.75rem;
   background: var(--surface);
-  color: inherit;
+  color: var(--ink);
+  border: var(--border);
+  border-radius: 0;
+  outline: none;
+}
+
+.field input:focus,
+.field select:focus {
+  background: var(--accent);
+  color: #0b0b0b;
+  box-shadow: var(--shadow-press);
+}
+
+.field input[type='file'] {
+  font-size: 0.82rem;
+  padding: 0.5rem;
 }
 
 .field .hint {
-  font-size: 0.8rem;
-  color: #6b665e;
+  font-size: 0.78rem;
+  opacity: 0.72;
 }
 
 .grid-2 {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 0 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 0 1.25rem;
 }
 
 button {
-  font: inherit;
-  font-weight: 600;
-  padding: 0.6rem 1.1rem;
-  border-radius: 8px;
-  border: 1px solid var(--accent);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.8rem 1.5rem;
   background: var(--accent);
-  color: #fff;
+  color: #0b0b0b;
+  border: var(--border-width) solid #0b0b0b;
+  border-radius: 0;
+  box-shadow: 5px 5px 0 #0b0b0b;
   cursor: pointer;
+  transition: transform 60ms linear, box-shadow 60ms linear;
+}
+
+button:hover:not(:disabled) {
+  transform: translate(-2px, -2px);
+  box-shadow: 7px 7px 0 #0b0b0b;
+}
+
+/* The press is the whole point — the button physically moves onto its shadow. */
+button:active:not(:disabled) {
+  transform: translate(5px, 5px);
+  box-shadow: none;
 }
 
 button:disabled {
-  opacity: 0.55;
+  opacity: 0.5;
   cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* ---------------------------------------------------------------- table */
+
+.table-wrap {
+  overflow-x: auto;
+  border: var(--border);
+  box-shadow: var(--shadow-sm);
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.9rem;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  background: var(--surface);
 }
 
-th,
-td {
-  text-align: left;
-  padding: 0.6rem 0.5rem;
-  border-bottom: 1px solid var(--border);
+thead {
+  background: var(--ink);
+  color: var(--paper);
 }
 
 th {
-  font-size: 0.78rem;
+  text-align: left;
+  padding: 0.75rem 0.85rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.11em;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: #6b665e;
+  white-space: nowrap;
 }
 
-.empty {
-  color: #6b665e;
-  font-size: 0.925rem;
-  padding: 2rem 0;
-  text-align: center;
+td {
+  padding: 0.7rem 0.85rem;
+  border-bottom: 2px solid var(--ink);
+  vertical-align: top;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+tbody tr:hover td {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.score {
+  font-weight: 900;
+  font-size: 1rem;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- severity */
+
+.badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.45rem;
+  border: 2px solid #0b0b0b;
+  color: #0b0b0b;
+  white-space: nowrap;
+}
+
+.badge-high {
+  background: var(--high);
+  color: #fff;
+}
+
+.badge-medium {
+  background: var(--medium);
+}
+
+.badge-low {
+  background: var(--low);
 }
 
 .sev-high {
   color: var(--high);
-  font-weight: 600;
 }
+
 .sev-medium {
   color: var(--medium);
 }
+
 .sev-low {
   color: var(--low);
+}
+
+/* ---------------------------------------------------------------- misc */
+
+.empty {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 2.5rem 1rem;
+  border: var(--border-width) dashed var(--ink);
+  opacity: 0.8;
+}
+
+.stamp {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.3rem 0.6rem;
+  border: var(--border-width) solid var(--ink);
+  /* Slight rotation so it reads as a stamped mark, not another button. */
+  transform: rotate(-2deg);
+}
+
+code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  background: var(--ink);
+  color: var(--paper);
+  padding: 0.1rem 0.35rem;
+}
+
+a {
+  color: inherit;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 640px) {
+  :root {
+    --border-width: 2px;
+    --shadow: 4px 4px 0 var(--ink);
+    --shadow-sm: 3px 3px 0 var(--ink);
+  }
+
+  .shell {
+    padding: 1.5rem 0.9rem 3rem;
+  }
+
+  .card {
+    padding: 1.25rem;
+  }
 }

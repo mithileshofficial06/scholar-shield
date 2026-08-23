@@ -41,10 +41,10 @@ function emptyMessage(state: Exclude<QueueState, { kind: 'ok' }> | { kind: 'ok' 
   }
 }
 
-function severityClass(item: QueueItem): string {
-  if (item.highSeverityCount > 0) return 'sev-high';
-  if (item.flagCount > 0) return 'sev-medium';
-  return 'sev-low';
+function severityOf(item: QueueItem): 'high' | 'medium' | 'low' {
+  if (item.highSeverityCount > 0) return 'high';
+  if (item.flagCount > 0) return 'medium';
+  return 'low';
 }
 
 export default async function DashboardPage() {
@@ -64,33 +64,42 @@ export default async function DashboardPage() {
         {items.length === 0 ? (
           <p className="empty">{emptyMessage(state)}</p>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Score</th>
-                <th>Applicant</th>
-                <th>District</th>
-                <th>Top flag</th>
-                <th>Flags</th>
-                <th>Submitted</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => (
-                <tr key={item.id}>
-                  <td className={severityClass(item)}>{item.riskScore.toFixed(1)}</td>
-                  <td>{item.applicantName}</td>
-                  <td>{item.district}</td>
-                  <td>{item.topFlagReason ?? '—'}</td>
-                  <td>
-                    {item.flagCount}
-                    {item.highSeverityCount > 0 ? ` (${item.highSeverityCount} high)` : ''}
-                  </td>
-                  <td>{new Date(item.submittedAt).toLocaleDateString()}</td>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Score</th>
+                  <th>Severity</th>
+                  <th>Applicant</th>
+                  <th>District</th>
+                  <th>Top flag</th>
+                  <th>Flags</th>
+                  <th>Submitted</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {items.map((item) => {
+                  const severity = severityOf(item);
+                  return (
+                    <tr key={item.id}>
+                      <td className={`score sev-${severity}`}>{item.riskScore.toFixed(1)}</td>
+                      <td>
+                        <span className={`badge badge-${severity}`}>{severity}</span>
+                      </td>
+                      <td>{item.applicantName}</td>
+                      <td>{item.district}</td>
+                      <td>{item.topFlagReason ?? '—'}</td>
+                      <td>
+                        {item.flagCount}
+                        {item.highSeverityCount > 0 ? ` (${item.highSeverityCount} high)` : ''}
+                      </td>
+                      <td>{new Date(item.submittedAt).toLocaleDateString('en-IN')}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </>
