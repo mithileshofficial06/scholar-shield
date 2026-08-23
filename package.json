@@ -22,9 +22,12 @@
     "seed": "npm run seed --workspace apps/api",
     "metrics": "npm run metrics --workspace apps/api",
     "infra:up": "docker compose -f infra/docker-compose.yml up -d",
-    "infra:down": "docker compose -f infra/docker-compose.yml down"
+    "infra:down": "docker compose -f infra/docker-compose.yml down",
+    "seed:documents": "npm run seed:documents --workspace apps/api"
   },
   "devDependencies": {
+    "@napi-rs/canvas": "^1.0.7",
+    "sharp": "^0.35.3",
     "typescript": "^5.7.2"
   }
 }

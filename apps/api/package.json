@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "migrate": "tsx scripts/migrate.ts",
     "seed": "tsx scripts/seed.ts",
-    "metrics": "tsx scripts/metrics.ts"
+    "metrics": "tsx scripts/metrics.ts",
+    "seed:documents": "tsx scripts/seed-documents.ts"
   },
   "dependencies": {
     "@scholarshield/shared": "*",
