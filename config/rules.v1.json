@@ -1,0 +1,45 @@
+{
+  "version": "v1",
+  "description": "ScholarShield contradiction rule weights. Stamped onto every risk_flags row so a historical score stays reproducible against the config that produced it. Never edit in place after flags exist — add v2.",
+  "scholarshipIncomeCeiling": 250000,
+  "highSeverityScoreThreshold": 50,
+  "rules": {
+    "SIBLING_INCOME_CONTRADICTION": {
+      "enabled": true,
+      "severity": "high",
+      "weight": 40,
+      "incomeTolerancePercent": 15,
+      "incomeToleranceAbsolute": 12000,
+      "note": "Both tolerances must be exceeded. Certificates issued months apart legitimately differ a little, and a percentage alone fires on small absolute gaps between low incomes — precisely the applicants least able to contest a flag."
+    },
+    "GUARDIAN_INCOME_CONTRADICTION": {
+      "enabled": true,
+      "severity": "high",
+      "weight": 35,
+      "incomeTolerancePercent": 15,
+      "incomeToleranceAbsolute": 12000,
+      "note": "Same guardian, different households. Catches the case where household resolution failed but the guardian name is identical. Within one household SIBLING_INCOME_CONTRADICTION already covers it, so this rule skips same-household pairs to avoid double-counting."
+    },
+    "ADDRESS_CLUSTER_UNRELATED": {
+      "enabled": true,
+      "severity": "medium",
+      "weight": 20,
+      "minDistinctHouseholds": 3,
+      "note": "Medium, not high. Joint families, tenements, and migrant-labour housing put many genuinely low-income families at one address — the equity cases named in PROJECT_REPORT.md §6."
+    },
+    "ISSUING_OFFICE_MISMATCH": {
+      "enabled": true,
+      "severity": "low",
+      "weight": 8,
+      "note": "Weak on its own. A family that moved between certificate applications legitimately uses two offices."
+    },
+    "DEADLINE_PROXIMITY": {
+      "enabled": true,
+      "severity": "low",
+      "weight": 6,
+      "windowDays": 14,
+      "requiresCorroboration": true,
+      "note": "Never fires alone. Siblings applying in the same admission cycle obtain certificates days apart, which is normal and not evidence of anything. Only contributes once another Tier 1 rule has already fired on the same application."
+    }
+  }
+}
