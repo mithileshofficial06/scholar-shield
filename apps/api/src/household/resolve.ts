@@ -25,7 +25,7 @@
  * surname, not a shared address, not a shared phone. Corroboration is required.
  */
 
-import { nameCompatibility, normalizeIdentity, normalizeName } from './normalize.js';
+import { normalizeIdentity, normalizeName, type NormalizedName } from './normalize.js';
 
 export const MATCH_FIELDS = ['guardian_name', 'applicant_name', 'address', 'phone'] as const;
 export type MatchField = (typeof MATCH_FIELDS)[number];
@@ -95,6 +95,77 @@ export function trigramSimilarity(a: string, b: string): number {
   return union === 0 ? 0 : intersection / union;
 }
 
+/** An initial standing in for a full token is weaker evidence than a real match. */
+const INITIAL_STAND_IN = 0.6;
+
+/**
+ * Similarity between two personal names, matched token by token.
+ *
+ * WHY NOT WHOLE-STRING TRIGRAM
+ * -----------------------------
+ * Comparing `Shankar Duraisamy` against `Sekar Duraisamy` as whole strings scores
+ * 0.65 — high enough to link — because the shared token `Duraisamy` is longer
+ * than either given name and dominates the trigram set. Those are two brothers,
+ * not one man.
+ *
+ * Under Tamil patronymic naming that failure is systematic, not incidental:
+ * siblings and cousins routinely carry a father's or grandfather's name in the
+ * surname position, so whole-string similarity merges extended families by
+ * default. The consequence is worse than a missed link — merged brothers whose
+ * declared incomes differ produce a HIGH-severity sibling contradiction, when the
+ * honest reading of several related low-income families at one address is a
+ * MEDIUM address cluster a reviewer clears in seconds.
+ *
+ * So tokens are aligned to their best counterpart and the score is the MINIMUM
+ * across aligned parts, not the mean or the whole-string overlap. A household
+ * guardian is one specific person: every part of the name has to plausibly
+ * correspond, and one strong mismatch is disqualifying. Trigrams still do the
+ * work *within* a token, so transliteration variants (`Muthusamy` / `Muthuswami`)
+ * still match.
+ */
+export function nameSimilarity(a: NormalizedName, b: NormalizedName): number {
+  // A name reduced to initials carries no identifying content — `M. K.` must not
+  // match every two-token name in the district.
+  if (a.tokens.length === 0 || b.tokens.length === 0) return 0;
+
+  // Align from the side with fewer full tokens, so a name written with an initial
+  // is matched against the fuller spelling rather than the other way round.
+  const [small, large] = a.tokens.length <= b.tokens.length ? [a, b] : [b, a];
+
+  const available = [...large.tokens];
+  const scores: number[] = [];
+
+  for (const token of small.tokens) {
+    let bestIndex = -1;
+    let best = 0;
+    for (let i = 0; i < available.length; i += 1) {
+      const score = trigramSimilarity(token, available[i]!);
+      if (score > best) {
+        best = score;
+        bestIndex = i;
+      }
+    }
+    if (bestIndex >= 0) available.splice(bestIndex, 1);
+    scores.push(best);
+  }
+
+  for (const initial of small.initials) {
+    const index = available.findIndex((token) => token.startsWith(initial));
+    if (index >= 0) {
+      available.splice(index, 1);
+      scores.push(INITIAL_STAND_IN);
+    } else {
+      scores.push(0);
+    }
+  }
+
+  if (scores.length === 0) return 0;
+
+  // Extra tokens on the longer side are ignored: `Ganesan Ramalingam Iyer`
+  // containing `Ganesan Ramalingam` is not evidence of difference.
+  return Math.min(...scores);
+}
+
 export interface ResolutionInput {
   id: string;
   applicantName: string;
@@ -147,18 +218,9 @@ function prepare(input: ResolutionInput): Prepared {
 function fieldSimilarity(field: MatchField, a: Prepared, b: Prepared): number {
   switch (field) {
     case 'guardian_name':
-      // Trigrams cannot see that `M. Govindaraj` is `Muthusamy Govindaraj` — a
-      // whole token is missing. nameCompatibility can. Take whichever is more
-      // generous, since either being high is real evidence.
-      return Math.max(
-        trigramSimilarity(a.guardianName, b.guardianName),
-        nameCompatibility(a.guardianParsed, b.guardianParsed),
-      );
+      return nameSimilarity(a.guardianParsed, b.guardianParsed);
     case 'applicant_name':
-      return Math.max(
-        trigramSimilarity(a.applicantName, b.applicantName),
-        nameCompatibility(a.applicantParsed, b.applicantParsed),
-      );
+      return nameSimilarity(a.applicantParsed, b.applicantParsed);
     case 'address':
       return trigramSimilarity(a.address, b.address);
     case 'phone':

@@ -145,63 +145,6 @@ export function normalizeName(raw: string | null | undefined): NormalizedName {
   return { canonical: tokens.join(' '), tokens, initials };
 }
 
-/**
- * Whether two names are compatible enough to be worth an edge.
- *
- * The case this exists for: `Muthusamy Govindaraj` and `M. Govindaraj` are the same
- * person written two ways, and no amount of string similarity between the full
- * strings will say so — one is missing a whole token. Compatibility is decided on
- * shared full tokens, with an initial permitted to stand in for a token beginning
- * with that letter.
- *
- * Returns a score in [0,1] rather than a boolean, so the resolver can weight it.
- */
-export function nameCompatibility(a: NormalizedName, b: NormalizedName): number {
-  if (a.tokens.length === 0 || b.tokens.length === 0) return 0;
-
-  const aSet = new Set(a.tokens);
-  const bSet = new Set(b.tokens);
-
-  let shared = 0;
-  for (const token of aSet) if (bSet.has(token)) shared += 1;
-
-  // An initial on one side standing in for a full token on the other.
-  let initialMatches = 0;
-  const matchInitials = (initials: string[], tokens: Set<string>, used: Set<string>) => {
-    for (const initial of initials) {
-      for (const token of tokens) {
-        if (used.has(token)) continue;
-        if (token.startsWith(initial)) {
-          used.add(token);
-          initialMatches += 1;
-          break;
-        }
-      }
-    }
-  };
-
-  const usedByInitial = new Set<string>();
-  matchInitials(a.initials, bSet, usedByInitial);
-  matchInitials(b.initials, aSet, usedByInitial);
-
-  // Denominator is the smaller name, so a two-token name fully contained in a
-  // three-token name scores high rather than being penalised for brevity.
-  //
-  // Initials count toward the denominator. Without that, `M. Govindaraj` (one
-  // token, one initial) has a denominator of 1, and a single shared surname plus
-  // an initial standing in scores 1.5 — a perfect match against every `M.` in the
-  // district. Counting name parts rather than full tokens keeps it at 0.75.
-  const partsA = aSet.size + a.initials.length;
-  const partsB = bSet.size + b.initials.length;
-  const denominator = Math.min(partsA, partsB);
-  if (denominator === 0) return 0;
-
-  // Initial matches count for less than a full shared token — they are weaker
-  // evidence, and treating them as equal is how `M. Kumar` merges with everyone.
-  const score = (shared + initialMatches * 0.5) / denominator;
-  return Math.min(1, score);
-}
-
 export function normalizeAddress(raw: string | null | undefined): string {
   if (!raw) return '';
 

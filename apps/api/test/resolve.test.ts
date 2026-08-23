@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { normalizeName } from '../src/household/normalize.js';
 import {
   LINK_THRESHOLD,
   linkedPairs,
+  nameSimilarity,
   resolvePair,
   trigramSimilarity,
   trigrams,
@@ -50,6 +52,57 @@ describe('trigramSimilarity', () => {
     const score = trigramSimilarity('govindaraj', 'govindraj');
     expect(score).toBeGreaterThan(0.5);
     expect(score).toBeLessThan(1);
+  });
+});
+
+describe('nameSimilarity — token-aligned, minimum across parts', () => {
+  const sim = (a: string, b: string) => nameSimilarity(normalizeName(a), normalizeName(b));
+
+  it('scores identical names at 1', () => {
+    expect(sim('Raman Subramaniam', 'Raman Subramaniam')).toBe(1);
+  });
+
+  it('separates brothers sharing a patronymic', () => {
+    // The regression this function exists for. Whole-string trigram scored these
+    // 0.65 — enough to link — because `Duraisamy` is longer than either given
+    // name and dominates the trigram set. They are two brothers, not one man.
+    const score = sim('Shankar Duraisamy', 'Sekar Duraisamy');
+    expect(score).toBeLessThan(0.5);
+  });
+
+  it('separates cousins sharing a grandfather name', () => {
+    expect(sim('Elangovan Duraisamy', 'Sekar Duraisamy')).toBeLessThan(0.5);
+    expect(sim('Anand Krishnan', 'Suresh Krishnan')).toBeLessThan(0.5);
+  });
+
+  it('still matches transliteration variants of one person', () => {
+    // Trigrams do the work *within* a token, so the spelling variance that
+    // normalization deliberately leaves behind is still absorbed here.
+    expect(sim('Muthusamy Govindaraj', 'Muthuswami Govindraj')).toBeGreaterThan(0.55);
+  });
+
+  it('lets an initial stand in for a full token, at reduced weight', () => {
+    const withInitial = sim('Muthusamy Govindaraj', 'M. Govindaraj');
+    expect(withInitial).toBeGreaterThan(0.55);
+    expect(withInitial).toBeLessThan(1);
+  });
+
+  it('does not let an initial match a name it does not begin', () => {
+    // `M. Kumar` is not `Suresh Kumar`.
+    expect(sim('M. Kumar', 'Suresh Kumar')).toBe(0);
+  });
+
+  it('ignores extra tokens on the longer name', () => {
+    expect(sim('Ganesan Ramalingam Iyer', 'Ganesan Ramalingam')).toBe(1);
+  });
+
+  it('returns 0 when either side is initials only', () => {
+    // `M. K.` carries no identifying content and must not match the district.
+    expect(sim('M. K.', 'Suresh Kumar')).toBe(0);
+  });
+
+  it('scores wholly unrelated names at zero', () => {
+    expect(sim('Raman Subramaniam', 'Kannan Velusamy')).toBe(0);
   });
 });
 

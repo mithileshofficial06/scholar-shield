@@ -1,0 +1,21 @@
+{
+  // Typecheck config. Wider than the build config because tests and scripts
+  // legitimately reach outside apps/api — the synthetic corpus lives at
+  // db/seed/, where `patterns.holdout.ts` was sealed, and that path is part of
+  // the provenance record (PROJECT_REPORT.md §7.1). Moving it to satisfy a
+  // compiler setting would destroy the thing it is evidence for.
+  //
+  // Nothing here emits: the build config compiles src/ alone, so widening
+  // rootDir cannot change what ends up in dist/.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "../.."
+  },
+  "include": [
+    "src/**/*.ts",
+    "scripts/**/*.ts",
+    "test/**/*.ts",
+    "../../db/seed/**/*.ts"
+  ]
+}

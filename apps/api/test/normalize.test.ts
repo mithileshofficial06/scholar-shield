@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  nameCompatibility,
   normalizeAddress,
   normalizeIdentity,
   normalizeName,
@@ -42,42 +41,6 @@ describe('normalizeName', () => {
     expect(normalizeName('').canonical).toBe('');
     expect(normalizeName(null).tokens).toEqual([]);
     expect(normalizeName('   ...   ').canonical).toBe('');
-  });
-});
-
-describe('nameCompatibility', () => {
-  const compat = (a: string, b: string) => nameCompatibility(normalizeName(a), normalizeName(b));
-
-  it('scores identical names at 1', () => {
-    expect(compat('Raman Subramaniam', 'Raman Subramaniam')).toBe(1);
-  });
-
-  it('lets an initial stand in for a full token, but weighted lower', () => {
-    const withInitial = compat('Muthusamy Govindaraj', 'M. Govindaraj');
-    const bothFull = compat('Muthusamy Govindaraj', 'Muthusamy Govindaraj');
-
-    expect(withInitial).toBeGreaterThan(0.5);
-    expect(withInitial).toBeLessThan(bothFull);
-  });
-
-  it('scores a shorter name contained in a longer one highly', () => {
-    // Denominator is the smaller name — brevity is not evidence of difference.
-    expect(compat('Ganesan Ramalingam Iyer', 'Ganesan Ramalingam')).toBe(1);
-  });
-
-  it('scores unrelated names at zero', () => {
-    expect(compat('Raman Subramaniam', 'Kannan Velusamy')).toBe(0);
-  });
-
-  it('does not match a bare initial against everything', () => {
-    // `M. Kumar` vs `Suresh Kumar` shares one real token out of two.
-    const score = compat('M. Kumar', 'Suresh Kumar');
-    expect(score).toBeLessThan(1);
-    expect(score).toBeGreaterThan(0);
-  });
-
-  it('returns 0 when either side has no full tokens', () => {
-    expect(nameCompatibility(normalizeName('M. K.'), normalizeName('Suresh Kumar'))).toBe(0);
   });
 });
 
