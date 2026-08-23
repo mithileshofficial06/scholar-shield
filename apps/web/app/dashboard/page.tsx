@@ -7,15 +7,37 @@ import type { QueueItem } from '@scholarshield/shared';
  * detail view, the household graph, and the decision flow; for now this renders
  * the real shape from the real endpoint, and an empty state when the API is down.
  */
-async function fetchQueue(): Promise<{ items: QueueItem[]; reachable: boolean }> {
+type QueueState =
+  | { kind: 'ok'; items: QueueItem[] }
+  | { kind: 'unauthenticated' }
+  | { kind: 'unreachable' }
+  | { kind: 'error'; status: number };
+
+async function fetchQueue(): Promise<QueueState> {
   const base = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
   try {
     const res = await fetch(`${base}/queue`, { cache: 'no-store' });
-    if (!res.ok) return { items: [], reachable: false };
+    // 401 means the API answered — it is up, we are just not signed in. Reporting
+    // that as "unreachable" sends someone to restart a server that is running.
+    if (res.status === 401 || res.status === 403) return { kind: 'unauthenticated' };
+    if (!res.ok) return { kind: 'error', status: res.status };
     const data = (await res.json()) as { items: QueueItem[] };
-    return { items: data.items ?? [], reachable: true };
+    return { kind: 'ok', items: data.items ?? [] };
   } catch {
-    return { items: [], reachable: false };
+    return { kind: 'unreachable' };
+  }
+}
+
+function emptyMessage(state: Exclude<QueueState, { kind: 'ok' }> | { kind: 'ok' }): string {
+  switch (state.kind) {
+    case 'ok':
+      return 'No applications awaiting review. Run `npm run seed` to load the synthetic corpus.';
+    case 'unauthenticated':
+      return 'Sign in as a reviewer to see the queue. Staff sign-in lands in Week 6.';
+    case 'unreachable':
+      return 'API unreachable — start it with `npm run dev`.';
+    case 'error':
+      return `API returned ${state.status}. Check the API logs.`;
   }
 }
 
@@ -26,7 +48,8 @@ function severityClass(item: QueueItem): string {
 }
 
 export default async function DashboardPage() {
-  const { items, reachable } = await fetchQueue();
+  const state = await fetchQueue();
+  const items = state.kind === 'ok' ? state.items : [];
 
   return (
     <>
@@ -39,11 +62,7 @@ export default async function DashboardPage() {
         <h2>Review queue</h2>
 
         {items.length === 0 ? (
-          <p className="empty">
-            {reachable
-              ? 'No applications awaiting review. Run `npm run seed` to load the synthetic corpus.'
-              : 'API unreachable — start it with `npm run dev` (and `npm run infra:up` for Postgres).'}
-          </p>
+          <p className="empty">{emptyMessage(state)}</p>
         ) : (
           <table>
             <thead>
