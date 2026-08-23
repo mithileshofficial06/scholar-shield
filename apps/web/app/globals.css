@@ -25,10 +25,16 @@
  */
 
 :root {
-  --page: #3d5aff;
+  /* Neutral bone rather than a saturated hue. The ground has to sit quietly
+     under an animated grid and a page full of solid severity colours; a
+     saturated page colour fights both. */
+  --page: #e7e2d5;
   --surface: #fffdf6;
   --ink: #0b0b0b;
   --ink-contrast: #fffdf6;
+
+  --grid-fine: rgba(11, 11, 11, 0.11);
+  --grid-coarse: rgba(11, 11, 11, 0.17);
 
   --accent: #ffd93d;
 
@@ -48,12 +54,13 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    /* Deep indigo rather than the same blue darkened — at full saturation on a
-       dark scheme the electric blue vibrates against light borders. */
-    --page: #0e1442;
+    --page: #0d0d11;
     --surface: #1b1b1b;
     --ink: #f4efe3;
     --ink-contrast: #121212;
+
+    --grid-fine: rgba(244, 239, 227, 0.09);
+    --grid-coarse: rgba(244, 239, 227, 0.15);
   }
 }
 
@@ -75,7 +82,85 @@ body {
   line-height: 1.5;
 }
 
+/* ---------------------------------------------------------------- background */
+
+/* Fixed behind everything. Painted by the layers below rather than by body, so
+   the grid stays put while content scrolls over it. */
+.bg-field {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--page);
+}
+
+.bg-field > div {
+  position: absolute;
+  /* Oversized so a tilted or offset layer never reveals its own edge. */
+  inset: -35%;
+}
+
+/* The live layer: a fine grid crawling upward forever, independent of input. */
+.bg-drift {
+  background-image:
+    linear-gradient(to right, var(--grid-fine) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-fine) 1px, transparent 1px);
+  background-size: 44px 44px;
+  animation: grid-drift 2.6s linear infinite;
+  will-change: background-position;
+}
+
+@keyframes grid-drift {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    /* Exactly one cell, so the loop is seamless. */
+    background-position: 0 -44px;
+  }
+}
+
+/* The reactive layer: driven only by scroll, and only on axes the drift never
+   touches — sideways sweep, downward push against the upward crawl, slight tilt.
+   Scrolling therefore reads as acting on the page, not as speeding up the
+   animation already playing. */
+.bg-react {
+  background-image:
+    linear-gradient(to right, var(--grid-coarse) 2px, transparent 2px),
+    linear-gradient(to bottom, var(--grid-coarse) 2px, transparent 2px);
+  background-size: 176px 176px;
+  background-position: calc(var(--scroll-x, 0px) * -1) var(--scroll-y, 0px);
+  transform: rotate(var(--scroll-tilt, 0deg));
+  transform-origin: 50% 40%;
+  opacity: 0.85;
+  will-change: background-position, transform;
+}
+
+/* Keeps the grid from competing with content at the edges of the viewport.
+   Overrides the oversized inset above — this one must track the viewport exactly
+   or the falloff lands off-screen and does nothing. */
+.bg-vignette {
+  inset: 0;
+  background: radial-gradient(
+    ellipse at 50% 42%,
+    transparent 0%,
+    transparent 46%,
+    color-mix(in srgb, var(--page) 70%, transparent) 100%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bg-drift {
+    animation: none;
+  }
+  .bg-react {
+    transform: none;
+  }
+}
+
 .shell {
+  position: relative;
   max-width: 1120px;
   margin: 0 auto;
   padding: 2.5rem 1.25rem 5rem;
