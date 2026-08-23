@@ -1,71 +1,65 @@
-/* ScholarShield — neo-brutalist theme.
+/* ScholarShield — "forensic instrument".
  *
- * Hard borders, hard shadows, no blur, no gradients, no rounding. The visual
- * language is a government form crossed with a warning label, which is roughly
- * what this tool is: institutional, blunt, and legible at a glance under time
- * pressure. Severity is carried by solid colour blocks rather than subtle tints,
- * because a reviewer scanning a queue needs the high-severity rows to be
- * unmissable, not tasteful.
+ * The previous pass was generic neo-brutalism: bordered cards stacked in a
+ * column, cartoon shadows, sticker yellow. Structurally honest, visually
+ * anonymous. This keeps the brutalist backbone — raw structure, hairline rules,
+ * nothing soft or decorative — but executes it as an operator console rather
+ * than a poster.
  *
- * The page sits on saturated electric blue and every card floats on it in white
- * with a hard black shadow. Two token pairs make that work in both colour schemes:
+ * Three rules the whole system follows:
  *
- *   --page / --surface     the ground, and the blocks sitting on it
- *   --ink / --ink-contrast  text-and-border, and whatever must read ON that ink
+ *   1. SATURATION IS RESERVED. The canvas, panels and rules are all neutral. The
+ *      only saturated colours on the page are the signal accent and the three
+ *      severity hues. When a reviewer scans a queue, the coloured thing is
+ *      always the thing that needs attention.
  *
- * Without --ink-contrast, the inverted blocks (masthead badge, table head, inline
- * code) become light-on-light the moment the scheme flips.
+ *   2. SCALE CARRIES HIERARCHY, not boxes. Display type runs to 5rem; mono
+ *      microtype runs to 0.66rem. The distance between them does the work that
+ *      borders were doing before.
  *
- * Notices and buttons deliberately opt out of the scheme entirely — they are
- * stickers, hard-coded yellow with black ink, and they read identically on either
- * ground. That is the point of a warning label.
+ *   3. HAIRLINES, NOT SHADOWS. 1px rules at low contrast, the way instrument
+ *      panels and technical drawings separate regions.
  *
- * No web fonts — system stacks only, so the page renders identically offline and
- * has nothing to block on.
+ * Dark only, deliberately. This is a console someone stares at while comparing
+ * documents; a light variant would be a second design carrying no extra meaning.
  */
 
 :root {
-  /* Neutral bone rather than a saturated hue. The ground has to sit quietly
-     under an animated grid and a page full of solid severity colours; a
-     saturated page colour fights both. */
-  --page: #e7e2d5;
-  --surface: #fffdf6;
-  --ink: #0b0b0b;
-  --ink-contrast: #fffdf6;
+  --canvas: #0a0b0e;
+  --panel: #101216;
+  --panel-2: #15181e;
 
-  --grid-fine: rgba(11, 11, 11, 0.11);
-  --grid-coarse: rgba(11, 11, 11, 0.17);
+  --line: #21252d;
+  --line-2: #333947;
 
-  --accent: #ffd93d;
+  --text: #e9eaee;
+  --dim: #8d93a1;
+  --faint: #5b6070;
 
-  --high: #ff3b21;
-  --medium: #ff9f1c;
-  --low: #00b464;
+  /* Acid lime reads as "live instrument" and shares no hue with the severity
+     scale, so it can never be mistaken for a risk level. */
+  --signal: #ccff00;
 
-  --border-width: 3px;
-  --border: var(--border-width) solid var(--ink);
-  --shadow: 7px 7px 0 var(--ink);
-  --shadow-sm: 4px 4px 0 var(--ink);
-  --shadow-press: 2px 2px 0 var(--ink);
+  --high: #ff4a3d;
+  --medium: #ffb03a;
+  --low: #3ddc84;
 
-  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Consolas, monospace;
-  --sans: "Helvetica Neue", Helvetica, Arial, ui-sans-serif, system-ui, sans-serif;
-}
+  --grid-fine: rgba(233, 234, 238, 0.045);
+  --grid-coarse: rgba(233, 234, 238, 0.075);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --page: #0d0d11;
-    --surface: #1b1b1b;
-    --ink: #f4efe3;
-    --ink-contrast: #121212;
+  --display: var(--font-display), "Helvetica Neue", Arial, sans-serif;
+  --mono: var(--font-mono), ui-monospace, Consolas, monospace;
 
-    --grid-fine: rgba(244, 239, 227, 0.09);
-    --grid-coarse: rgba(244, 239, 227, 0.15);
-  }
+  --gutter: clamp(1rem, 4vw, 2.5rem);
+  --max: 1240px;
 }
 
 * {
   box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 html,
@@ -75,39 +69,42 @@ body {
 }
 
 body {
-  background: var(--page);
-  color: var(--ink);
-  font-family: var(--sans);
+  background: var(--canvas);
+  color: var(--text);
+  font-family: var(--display);
   font-size: 16px;
-  line-height: 1.5;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'kern' 1;
+}
+
+::selection {
+  background: var(--signal);
+  color: #0a0b0e;
 }
 
 /* ---------------------------------------------------------------- background */
 
-/* Fixed behind everything. Painted by the layers below rather than by body, so
-   the grid stays put while content scrolls over it. */
 .bg-field {
   position: fixed;
   inset: 0;
   z-index: -1;
   overflow: hidden;
   pointer-events: none;
-  background: var(--page);
+  background: var(--canvas);
 }
 
 .bg-field > div {
   position: absolute;
-  /* Oversized so a tilted or offset layer never reveals its own edge. */
   inset: -35%;
 }
 
-/* The live layer: a fine grid crawling upward forever, independent of input. */
 .bg-drift {
   background-image:
     linear-gradient(to right, var(--grid-fine) 1px, transparent 1px),
     linear-gradient(to bottom, var(--grid-fine) 1px, transparent 1px);
-  background-size: 44px 44px;
-  animation: grid-drift 2.6s linear infinite;
+  background-size: 48px 48px;
+  animation: grid-drift 3.4s linear infinite;
   will-change: background-position;
 }
 
@@ -116,41 +113,32 @@ body {
     background-position: 0 0;
   }
   to {
-    /* Exactly one cell, so the loop is seamless. */
-    background-position: 0 -44px;
+    background-position: 0 -48px;
   }
 }
 
-/* The reactive layer: driven only by scroll, and only on axes the drift never
-   touches — sideways sweep, downward push against the upward crawl, slight tilt.
-   Scrolling therefore reads as acting on the page, not as speeding up the
-   animation already playing. */
 .bg-react {
   background-image:
-    linear-gradient(to right, var(--grid-coarse) 2px, transparent 2px),
-    linear-gradient(to bottom, var(--grid-coarse) 2px, transparent 2px);
-  background-size: 176px 176px;
+    linear-gradient(to right, var(--grid-coarse) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-coarse) 1px, transparent 1px);
+  background-size: 192px 192px;
   background-position: calc(var(--scroll-x, 0px) * -1) var(--scroll-y, 0px);
   transform: rotate(var(--scroll-tilt, 0deg));
   transform-origin: 50% 40%;
-  opacity: 0.85;
   will-change: background-position, transform;
 }
 
-/* Keeps the grid from competing with content at the edges of the viewport.
-   Overrides the oversized inset above — this one must track the viewport exactly
-   or the falloff lands off-screen and does nothing. */
 .bg-vignette {
   inset: 0;
-  background: radial-gradient(
-    ellipse at 50% 42%,
-    transparent 0%,
-    transparent 46%,
-    color-mix(in srgb, var(--page) 70%, transparent) 100%
-  );
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 0%, rgba(204, 255, 0, 0.05), transparent 70%),
+    radial-gradient(ellipse at 50% 45%, transparent 30%, var(--canvas) 100%);
 }
 
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
   .bg-drift {
     animation: none;
   }
@@ -159,265 +147,653 @@ body {
   }
 }
 
-.shell {
-  position: relative;
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 2.5rem 1.25rem 5rem;
-}
-
 /* ---------------------------------------------------------------- masthead */
 
 .masthead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
-  margin-bottom: 2.5rem;
-  padding-bottom: 1.5rem;
-  border-bottom: var(--border-width) solid var(--ink);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--canvas) 82%, transparent);
+  backdrop-filter: blur(14px);
 }
 
-.masthead h1 {
-  margin: 0;
-  font-size: 1.05rem;
-  font-weight: 900;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  background: var(--ink);
-  color: var(--ink-contrast);
-  padding: 0.5rem 0.85rem;
-  border: var(--border);
-  box-shadow: var(--shadow-sm);
+.masthead-inner {
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+  height: 60px;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.wordmark {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  text-decoration: none;
+  color: var(--text);
+  margin-right: auto;
+}
+
+.wordmark-mark {
+  width: 13px;
+  height: 13px;
+  background: var(--signal);
+  /* Shield-ish notched square — a logotype mark without an illustration. */
+  clip-path: polygon(0 0, 100% 0, 100% 62%, 50% 100%, 0 62%);
+}
+
+.wordmark-text {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.wordmark-text em {
+  font-style: normal;
+  font-weight: 400;
+  color: var(--dim);
 }
 
 .masthead nav {
   display: flex;
-  gap: 0.65rem;
-  flex-wrap: wrap;
+  gap: 0.25rem;
 }
 
 .masthead nav a {
   font-family: var(--mono);
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   text-decoration: none;
-  color: var(--ink);
-  background: var(--surface);
-  padding: 0.45rem 0.8rem;
-  border: var(--border);
-  box-shadow: var(--shadow-press);
-  transition: transform 60ms linear, box-shadow 60ms linear, background 60ms linear;
+  color: var(--dim);
+  padding: 0.4rem 0.7rem;
+  border: 1px solid transparent;
+  transition: color 120ms, border-color 120ms;
 }
 
 .masthead nav a:hover {
-  background: var(--accent);
-  color: #0b0b0b;
-  transform: translate(-2px, -2px);
-  box-shadow: var(--shadow-sm);
+  color: var(--text);
+  border-color: var(--line-2);
 }
 
-.masthead nav a:active {
-  transform: translate(2px, 2px);
-  box-shadow: none;
-}
-
-/* ---------------------------------------------------------------- blocks */
-
-.card {
-  background: var(--surface);
-  border: var(--border);
-  box-shadow: var(--shadow);
-  padding: 1.75rem;
-  margin-bottom: 2rem;
-}
-
-.card h2 {
-  margin: 0 0 1rem;
-  font-size: 1.15rem;
-  font-weight: 900;
-  letter-spacing: 0.06em;
+.masthead-status {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  /* Underscore rule, like a form section header. */
-  border-bottom: var(--border-width) solid var(--ink);
-  padding-bottom: 0.5rem;
+  color: var(--faint);
+  white-space: nowrap;
 }
 
-.card p {
-  margin: 0 0 1rem;
+.pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--signal);
+  animation: pulse 2.4s ease-in-out infinite;
 }
 
-.card p:last-child,
-.card ol:last-child,
-.card ul:last-child {
-  margin-bottom: 0;
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(204, 255, 0, 0.45);
+  }
+  50% {
+    opacity: 0.5;
+    box-shadow: 0 0 0 5px rgba(204, 255, 0, 0);
+  }
 }
 
-.card ol,
-.card ul {
-  margin: 0 0 1rem;
-  padding-left: 1.25rem;
+/* ---------------------------------------------------------------- shell */
+
+.shell {
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: 0 var(--gutter) 7rem;
 }
 
-.card li {
-  margin-bottom: 0.4rem;
+/* ---------------------------------------------------------------- type */
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin: 0 0 1.25rem;
 }
 
-/* A sticker: identical in both colour schemes, because a warning label that
-   restyles itself to blend in is not doing its job. */
-.notice {
-  background: var(--accent);
-  color: #0b0b0b;
-  border: var(--border-width) solid #0b0b0b;
-  box-shadow: 7px 7px 0 #0b0b0b;
-  padding: 1.1rem 1.35rem;
-  margin-bottom: 2rem;
+.display {
+  font-size: clamp(2.4rem, 6.4vw, 4.9rem);
+  font-weight: 800;
+  line-height: 0.96;
+  letter-spacing: -0.042em;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.display em {
+  font-style: normal;
+  color: var(--faint);
+}
+
+.lede {
+  font-size: clamp(1rem, 1.5vw, 1.12rem);
+  line-height: 1.62;
+  color: var(--dim);
+  max-width: 56ch;
+}
+
+.lede strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------- hero */
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 4fr);
+  gap: clamp(2rem, 5vw, 4.5rem);
+  align-items: end;
+  padding: clamp(3.5rem, 9vw, 7rem) 0 clamp(2.5rem, 5vw, 4rem);
+  border-bottom: 1px solid var(--line);
+}
+
+.hero-copy .lede {
+  margin: 1.75rem 0 0;
+}
+
+.stat-stack {
+  display: grid;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+}
+
+.stat {
+  background: var(--canvas);
+  padding: 1.1rem 1.25rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.9rem;
+}
+
+.stat-value {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  min-width: 2.4ch;
+}
+
+.stat-value.is-signal {
+  color: var(--signal);
+}
+
+.stat-label {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--faint);
+  line-height: 1.35;
+}
+
+/* ---------------------------------------------------------------- guardrail */
+
+.guardrail {
+  display: flex;
+  gap: 1.1rem;
+  align-items: flex-start;
+  padding: 1.25rem 1.5rem;
+  margin: 2.5rem 0 0;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--signal);
+  background: var(--panel);
   font-size: 0.95rem;
+  color: var(--dim);
 }
 
-.notice strong {
-  font-weight: 900;
+.guardrail strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.guardrail-key {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  color: var(--signal);
+  white-space: nowrap;
+  padding-top: 0.28rem;
+}
+
+/* ---------------------------------------------------------------- sections */
+
+.section {
+  padding: clamp(3rem, 7vw, 5.5rem) 0 0;
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  padding-bottom: 1.5rem;
+  margin-bottom: 2.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.section-index {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  color: var(--signal);
+}
+
+.section-title {
+  font-size: clamp(1.15rem, 2.2vw, 1.5rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.section-note {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+  text-align: right;
+}
+
+/* ---------------------------------------------------------------- diagram */
+
+.diagram-frame {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  padding: clamp(1rem, 3vw, 2rem);
+  overflow-x: auto;
+}
+
+.diagram-frame svg {
+  display: block;
+  width: 100%;
+  min-width: 640px;
+  height: auto;
+}
+
+/* Fonts are set here rather than as SVG presentation attributes: var()
+   substitution inside a presentation attribute is not reliably supported, and
+   silently falls back to the browser default serif when it fails. */
+.diagram-frame svg text {
+  font-family: var(--mono);
+}
+
+.diagram-frame svg text.is-display {
+  font-family: var(--display);
+}
+
+.diagram-caption {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.75rem;
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+}
+
+.diagram-caption b {
+  color: var(--dim);
+  font-weight: 500;
+}
+
+/* ---------------------------------------------------------------- pipeline */
+
+.pipeline {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+}
+
+.step {
+  background: var(--canvas);
+  padding: 1.5rem 1.35rem 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  position: relative;
+}
+
+.step-index {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
+  color: var(--faint);
+}
+
+.step-title {
+  font-size: 0.98rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  margin: 0;
+}
+
+.step-body {
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--dim);
+  margin: 0;
+}
+
+.step-tag {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-top: auto;
+  padding-top: 0.75rem;
+}
+
+/* The core engine gets the only accent in the row. */
+.step.is-core {
+  background: var(--panel-2);
+}
+
+.step.is-core::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: var(--signal);
+}
+
+.step.is-core .step-index,
+.step.is-core .step-tag {
+  color: var(--signal);
+}
+
+/* ---------------------------------------------------------------- principles */
+
+.principles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+}
+
+.principle {
+  background: var(--canvas);
+  padding: 1.6rem 1.4rem;
+}
+
+.principle h3 {
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 0.5rem;
+}
+
+.principle p {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--dim);
+  margin: 0;
+}
+
+.principle-rule {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--signal);
+  display: block;
+  margin-bottom: 0.9rem;
+}
+
+/* ---------------------------------------------------------------- panels */
+
+.panel {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  padding: clamp(1.35rem, 3vw, 2rem);
+}
+
+.panel + .panel {
+  margin-top: 1.5rem;
 }
 
 /* ---------------------------------------------------------------- forms */
 
+.form-section {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 0;
+  padding: 2rem 0 0.5rem;
+}
+
+.form-section:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.form-section legend {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--signal);
+  padding: 0;
+  margin-bottom: 1.5rem;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 1.35rem 1.5rem;
+}
+
 .field {
   display: grid;
-  gap: 0.4rem;
-  margin-bottom: 1.35rem;
+  gap: 0.45rem;
+  align-content: start;
+}
+
+.field.is-wide {
+  grid-column: 1 / -1;
 }
 
 .field label {
   font-family: var(--mono);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.09em;
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
+  color: var(--dim);
 }
 
 .field input,
 .field select {
   font-family: var(--mono);
-  font-size: 0.95rem;
-  padding: 0.65rem 0.75rem;
-  background: var(--surface);
-  color: var(--ink);
-  border: var(--border);
+  font-size: 0.9rem;
+  color: var(--text);
+  background: var(--canvas);
+  border: 1px solid var(--line-2);
   border-radius: 0;
+  padding: 0.65rem 0.75rem;
   outline: none;
+  transition: border-color 120ms, box-shadow 120ms;
+}
+
+.field input::placeholder {
+  color: var(--faint);
 }
 
 .field input:focus,
 .field select:focus {
-  background: var(--accent);
-  color: #0b0b0b;
-  box-shadow: var(--shadow-press);
+  border-color: var(--signal);
+  box-shadow: 0 0 0 1px var(--signal);
 }
 
 .field input[type='file'] {
-  font-size: 0.82rem;
-  padding: 0.5rem;
-}
-
-.field .hint {
   font-size: 0.78rem;
-  opacity: 0.72;
+  color: var(--dim);
+  padding: 0.55rem 0.6rem;
 }
 
-.grid-2 {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 0 1.25rem;
+.field input[type='file']::file-selector-button {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line-2);
+  padding: 0.35rem 0.7rem;
+  margin-right: 0.75rem;
+  cursor: pointer;
+}
+
+.hint {
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--faint);
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  margin-top: 2.25rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--line);
 }
 
 button {
   font-family: var(--mono);
-  font-size: 0.85rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  font-size: 0.74rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  padding: 0.8rem 1.5rem;
-  background: var(--accent);
-  color: #0b0b0b;
-  border: var(--border-width) solid #0b0b0b;
+  color: #0a0b0e;
+  background: var(--signal);
+  border: 1px solid var(--signal);
   border-radius: 0;
-  box-shadow: 5px 5px 0 #0b0b0b;
+  padding: 0.85rem 1.9rem;
   cursor: pointer;
-  transition: transform 60ms linear, box-shadow 60ms linear;
+  transition: background 120ms, color 120ms;
 }
 
 button:hover:not(:disabled) {
-  transform: translate(-2px, -2px);
-  box-shadow: 7px 7px 0 #0b0b0b;
-}
-
-/* The press is the whole point — the button physically moves onto its shadow. */
-button:active:not(:disabled) {
-  transform: translate(5px, 5px);
-  box-shadow: none;
+  background: transparent;
+  color: var(--signal);
 }
 
 button:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: not-allowed;
-  box-shadow: none;
 }
 
 /* ---------------------------------------------------------------- table */
 
 .table-wrap {
+  border: 1px solid var(--line);
   overflow-x: auto;
-  border: var(--border);
-  box-shadow: var(--shadow-sm);
-  background: var(--surface);
+  background: var(--panel);
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
   font-family: var(--mono);
-  font-size: 0.85rem;
-  background: var(--surface);
+  font-size: 0.8rem;
 }
 
-thead {
-  background: var(--ink);
-  color: var(--ink-contrast);
-}
-
-th {
+thead th {
+  position: sticky;
+  top: 60px;
   text-align: left;
-  padding: 0.75rem 0.85rem;
-  font-size: 0.7rem;
-  font-weight: 800;
-  letter-spacing: 0.11em;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
+  color: var(--faint);
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line-2);
   white-space: nowrap;
 }
 
-td {
-  padding: 0.7rem 0.85rem;
-  border-bottom: 2px solid var(--ink);
-  vertical-align: top;
+tbody td {
+  padding: 0.8rem 0.9rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--dim);
+  vertical-align: middle;
 }
 
 tbody tr:last-child td {
-  border-bottom: none;
+  border-bottom: 0;
 }
 
-tbody tr:hover td {
-  background: color-mix(in srgb, var(--accent) 35%, transparent);
+tbody tr {
+  transition: background 120ms;
 }
 
-.score {
-  font-weight: 900;
-  font-size: 1rem;
-  white-space: nowrap;
+tbody tr:hover {
+  background: var(--panel-2);
+}
+
+td.is-primary {
+  color: var(--text);
+}
+
+/* Score cell: numeral plus a proportional bar, so rank is readable without
+   comparing digits down the column. */
+.score-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 118px;
+}
+
+.score-value {
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-width: 3.2ch;
+  text-align: right;
+}
+
+.score-bar {
+  flex: 1;
+  height: 3px;
+  background: var(--line-2);
+  position: relative;
+}
+
+.score-bar span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--pct, 0%);
+  background: currentColor;
 }
 
 /* ---------------------------------------------------------------- severity */
@@ -425,91 +801,155 @@ tbody tr:hover td {
 .badge {
   display: inline-block;
   font-family: var(--mono);
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  font-size: 0.6rem;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
-  padding: 0.2rem 0.45rem;
-  border: 2px solid #0b0b0b;
-  color: #0b0b0b;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid currentColor;
   white-space: nowrap;
-}
-
-.badge-high {
-  background: var(--high);
-  color: #fff;
-}
-
-.badge-medium {
-  background: var(--medium);
-}
-
-.badge-low {
-  background: var(--low);
 }
 
 .sev-high {
   color: var(--high);
 }
-
 .sev-medium {
   color: var(--medium);
 }
-
 .sev-low {
   color: var(--low);
 }
 
 /* ---------------------------------------------------------------- misc */
 
-.empty {
+.metrics-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  margin-bottom: 1.5rem;
+}
+
+.metric {
+  background: var(--canvas);
+  padding: 1rem 1.15rem;
+}
+
+.metric-value {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.metric-label {
   font-family: var(--mono);
-  font-size: 0.85rem;
+  font-size: 0.62rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-top: 0.3rem;
+}
+
+.empty-state {
+  border: 1px dashed var(--line-2);
+  padding: 3.5rem 1.5rem;
   text-align: center;
-  padding: 2.5rem 1rem;
-  border: var(--border-width) dashed var(--ink);
-  opacity: 0.8;
+}
+
+.empty-state p {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--dim);
+  margin: 0 0 0.5rem;
+}
+
+.empty-state .hint {
+  margin: 0;
 }
 
 .stamp {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
   font-family: var(--mono);
-  font-size: 0.7rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  font-size: 0.64rem;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  padding: 0.3rem 0.6rem;
-  border: var(--border-width) solid var(--ink);
-  /* Slight rotation so it reads as a stamped mark, not another button. */
-  transform: rotate(-2deg);
+  color: var(--signal);
+  border: 1px solid var(--line-2);
+  padding: 0.35rem 0.7rem;
 }
 
 code {
   font-family: var(--mono);
-  font-size: 0.88em;
-  background: var(--ink);
-  color: var(--ink-contrast);
-  padding: 0.1rem 0.35rem;
+  font-size: 0.86em;
+  color: var(--signal);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  padding: 0.08rem 0.35rem;
 }
 
 a {
-  color: inherit;
-  text-decoration-thickness: 2px;
+  color: var(--text);
+  text-decoration-color: var(--line-2);
   text-underline-offset: 3px;
 }
 
-@media (max-width: 640px) {
-  :root {
-    --border-width: 2px;
-    --shadow: 5px 5px 0 var(--ink);
-    --shadow-sm: 3px 3px 0 var(--ink);
+a:hover {
+  text-decoration-color: var(--signal);
+}
+
+/* ---------------------------------------------------------------- colophon */
+
+.colophon {
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: 1.5rem var(--gutter) 3rem;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 2rem;
+  font-family: var(--mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.colophon span:first-child {
+  color: var(--dim);
+}
+
+/* ---------------------------------------------------------------- responsive */
+
+@media (max-width: 860px) {
+  .hero {
+    grid-template-columns: 1fr;
+    align-items: start;
   }
 
-  .shell {
-    padding: 1.5rem 0.9rem 3rem;
+  .masthead-status {
+    display: none;
   }
 
-  .card {
-    padding: 1.25rem;
+  thead th {
+    position: static;
+  }
+}
+
+@media (max-width: 560px) {
+  .masthead-inner {
+    gap: 0.75rem;
+  }
+
+  .masthead nav a {
+    padding: 0.4rem 0.45rem;
+    font-size: 0.66rem;
+  }
+
+  .section-note {
+    display: none;
   }
 }

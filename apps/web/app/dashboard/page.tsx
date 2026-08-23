@@ -1,12 +1,12 @@
 import type { QueueItem } from '@scholarshield/shared';
 
 /**
- * Reviewer risk queue — Week 1 shell.
+ * Reviewer risk queue.
  *
  * Server component so the queue fetch never reaches the browser. Week 6 adds the
- * detail view, the household graph, and the decision flow; for now this renders
- * the real shape from the real endpoint, and an empty state when the API is down.
+ * detail view, the household graph, and the decision flow.
  */
+
 type QueueState =
   | { kind: 'ok'; items: QueueItem[] }
   | { kind: 'unauthenticated' }
@@ -28,16 +28,28 @@ async function fetchQueue(): Promise<QueueState> {
   }
 }
 
-function emptyMessage(state: Exclude<QueueState, { kind: 'ok' }> | { kind: 'ok' }): string {
+function emptyCopy(state: QueueState): { headline: string; hint: string } {
   switch (state.kind) {
     case 'ok':
-      return 'No applications awaiting review. Run `npm run seed` to load the synthetic corpus.';
+      return {
+        headline: 'No applications awaiting review',
+        hint: 'Load the synthetic corpus with `npm run seed`.',
+      };
     case 'unauthenticated':
-      return 'Sign in as a reviewer to see the queue. Staff sign-in lands in Week 6.';
+      return {
+        headline: 'Reviewer sign-in required',
+        hint: 'The API answered but this session carries no staff token. Sign-in lands in Week 6.',
+      };
     case 'unreachable':
-      return 'API unreachable — start it with `npm run dev`.';
+      return {
+        headline: 'API unreachable',
+        hint: 'Start it with `npm run dev`.',
+      };
     case 'error':
-      return `API returned ${state.status}. Check the API logs.`;
+      return {
+        headline: `API returned ${state.status}`,
+        hint: 'Check the API logs.',
+      };
   }
 }
 
@@ -51,18 +63,49 @@ export default async function DashboardPage() {
   const state = await fetchQueue();
   const items = state.kind === 'ok' ? state.items : [];
 
+  const topScore = items.reduce((max, item) => Math.max(max, item.riskScore), 0) || 1;
+  const highCount = items.filter((i) => i.highSeverityCount > 0).length;
+  const flaggedCount = items.filter((i) => i.flagCount > 0).length;
+
   return (
     <>
-      <div className="notice">
-        Score sets <strong>review order only</strong>. Every decision requires a typed reason and is
-        written to an append-only audit log.
-      </div>
+      <section className="hero" style={{ paddingBottom: '2rem' }}>
+        <div className="hero-copy">
+          <p className="eyebrow">Reviewer console</p>
+          <h1 className="display">Queue</h1>
+          <p className="lede">
+            Ordered by score, then oldest first. A high score means{' '}
+            <strong>review this sooner</strong> — nothing more. Every decision requires a typed
+            reason and writes to an append-only audit log.
+          </p>
+        </div>
+      </section>
 
-      <div className="card">
-        <h2>Review queue</h2>
+      <section className="section" style={{ paddingTop: '2.5rem' }}>
+        <div className="metrics-strip">
+          <div className="metric">
+            <div className="metric-value">{items.length}</div>
+            <div className="metric-label">In queue</div>
+          </div>
+          <div className="metric">
+            <div className="metric-value sev-high">{highCount}</div>
+            <div className="metric-label">High severity</div>
+          </div>
+          <div className="metric">
+            <div className="metric-value sev-medium">{flaggedCount}</div>
+            <div className="metric-label">Carrying flags</div>
+          </div>
+          <div className="metric">
+            <div className="metric-value">v1</div>
+            <div className="metric-label">Rule config</div>
+          </div>
+        </div>
 
         {items.length === 0 ? (
-          <p className="empty">{emptyMessage(state)}</p>
+          <div className="empty-state">
+            <p>{emptyCopy(state).headline}</p>
+            <p className="hint">{emptyCopy(state).hint}</p>
+          </div>
         ) : (
           <div className="table-wrap">
             <table>
@@ -72,26 +115,34 @@ export default async function DashboardPage() {
                   <th>Severity</th>
                   <th>Applicant</th>
                   <th>District</th>
-                  <th>Top flag</th>
+                  <th>Leading signal</th>
                   <th>Flags</th>
-                  <th>Submitted</th>
+                  <th>Filed</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((item) => {
                   const severity = severityOf(item);
+                  const pct = `${Math.round((item.riskScore / topScore) * 100)}%`;
                   return (
                     <tr key={item.id}>
-                      <td className={`score sev-${severity}`}>{item.riskScore.toFixed(1)}</td>
                       <td>
-                        <span className={`badge badge-${severity}`}>{severity}</span>
+                        <div className={`score-cell sev-${severity}`}>
+                          <span className="score-value">{item.riskScore.toFixed(0)}</span>
+                          <span className="score-bar">
+                            <span style={{ ['--pct' as string]: pct }} />
+                          </span>
+                        </div>
                       </td>
-                      <td>{item.applicantName}</td>
+                      <td>
+                        <span className={`badge sev-${severity}`}>{severity}</span>
+                      </td>
+                      <td className="is-primary">{item.applicantName}</td>
                       <td>{item.district}</td>
                       <td>{item.topFlagReason ?? '—'}</td>
                       <td>
                         {item.flagCount}
-                        {item.highSeverityCount > 0 ? ` (${item.highSeverityCount} high)` : ''}
+                        {item.highSeverityCount > 0 ? ` · ${item.highSeverityCount} high` : ''}
                       </td>
                       <td>{new Date(item.submittedAt).toLocaleDateString('en-IN')}</td>
                     </tr>
@@ -101,7 +152,7 @@ export default async function DashboardPage() {
             </table>
           </div>
         )}
-      </div>
+      </section>
     </>
   );
 }
