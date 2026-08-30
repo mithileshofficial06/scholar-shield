@@ -20,3 +20,10 @@ Thumbs.db
 
 # Generated synthetic corpus — regenerate with `npm run seed`
 db/seed/output/
+
+# Python (apps/ocr-service)
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/

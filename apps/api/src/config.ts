@@ -20,6 +20,12 @@ const schema = z.object({
 
   OCR_SERVICE_URL: z.string().default('http://localhost:8000'),
 
+  // Pre-filled manual verification link. No portal is ever scraped (PROJECT_REPORT.md
+  // §5 Tier 3) — a reviewer opens this themselves and records what they saw.
+  VERIFICATION_PORTAL_URL: z
+    .string()
+    .default('https://tnedistrict.tn.gov.in/tneda/verify.xhtml'),
+
   JWT_SECRET: z.string().min(16).default('dev-only-secret-do-not-use-in-production'),
   MAGIC_LINK_TTL_MINUTES: z.coerce.number().int().positive().default(20),
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(12),

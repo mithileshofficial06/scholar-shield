@@ -47,6 +47,42 @@ interface ManifestEntry {
   degradation: Record<string, number>;
   /** Ground truth for the forensics stage. */
   isTampered: boolean;
+  /**
+   * Ground truth for the OCR stage: exactly what was printed on this variant.
+   *
+   * Recorded per document rather than looked up from the pattern files, because
+   * for a tampered document what is printed is NOT what the applicant declared —
+   * and grading OCR against the declaration would score a correct reading of a
+   * forged certificate as an OCR error.
+   */
+  truth: {
+    applicantName: string;
+    guardianName: string;
+    address: string;
+    district: string;
+    pincode: string;
+    familySize: number;
+    annualIncome: number;
+    certificateId: string;
+    issueDate: string;
+    issuingOffice: string;
+  };
+}
+
+/** What a given variant of an application actually has printed on it. */
+function truthFor(app: SeedApplication, printedIncome: number): ManifestEntry['truth'] {
+  return {
+    applicantName: app.applicantName,
+    guardianName: app.guardianName,
+    address: app.addressLine,
+    district: app.district,
+    pincode: app.pincode,
+    familySize: app.declaredFamilySize,
+    annualIncome: printedIncome,
+    certificateId: app.certificateId,
+    issueDate: app.certificateIssueDate,
+    issuingOffice: app.issuingOffice,
+  };
 }
 
 function sha256(buffer: Buffer): string {
@@ -99,6 +135,7 @@ async function main(): Promise<void> {
         compressionChain: null,
         degradation: degraded.applied,
         isTampered: false,
+        truth: truthFor(app, app.declaredAnnualIncome),
       });
 
       // 2 & 3. Tampered and its control — paired, so the corpus always has a
@@ -141,6 +178,7 @@ async function main(): Promise<void> {
         compressionChain: [...tampered.compressionChain, tamperedFinal.applied.jpegQuality],
         degradation: tamperedFinal.applied,
         isTampered: true,
+        truth: truthFor(app, forged),
       });
 
       const control = await recompressControl(rendered.png);
@@ -161,6 +199,7 @@ async function main(): Promise<void> {
         compressionChain: [...control.compressionChain, controlFinal.applied.jpegQuality],
         degradation: controlFinal.applied,
         isTampered: false,
+        truth: truthFor(app, app.declaredAnnualIncome),
       });
     }
   }

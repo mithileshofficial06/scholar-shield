@@ -112,3 +112,43 @@ Report rewritten as `PROJECT_REPORT.md` (v3). `prancy-purring-kurzweil.md` retir
 
 ## Net effect (Round 3)
 The differentiated engine is now the centre of the project rather than a footnote, the honesty about validation has been converted from disclaimers into measured numbers with a git-provable methodology, the one legally ambiguous component is gone with its architecture story intact, and the five unspecified subsystems (storage, auth, retention, failure semantics, abuse) are specified. The timeline reflects the actual scope.
+
+---
+
+# Week 4 — findings from opening the measurements
+
+Building the OCR and forensics stage produced three results the design did not predict. All three came from mechanisms that were built to be capable of producing bad news, which is the only reason they were detectable.
+
+## W4-1. ELA carries no usable signal on this corpus
+
+**Finding:** Error Level Analysis separates tampered from untampered documents at **AUC 0.510** — chance. Mean tamper score 0.153 on tampered documents, 0.151 on matched controls. It does not localise the edit either: the strongest ELA region falls in the income band on 12% of tampered documents versus 18% of controls, which is worse than the controls.
+
+**Why it happened:** exactly what §7.3 was written to guard against, working as designed. The tamper path re-encodes through Skia while the rest of the pipeline uses libvips, and degradation then re-compresses the *whole page* on top of the edit at quality 65–85 — lower than the edit's own 88. The final compression dominates and erases the local history ELA reads.
+
+**What changed:** nothing in the detector. The number is published in the README, and `tests/test_forensics.py::test_ela_does_not_separate_tampered_from_control` asserts the AUC stays in a chance band so the figure cannot drift away from the code. If a future detector genuinely separates the groups, that test fails and the README must be updated rather than the bound widened.
+
+**What this vindicates:** the control group. Without a set carrying identical compression history and no edit, a tampered-only measurement would have produced some number — 17 documents scoring a mean 0.153 — and nothing would have revealed that untampered documents score the same.
+
+## W4-2. Holdout recall is 17.6%, not the 100% the known corpus suggests
+
+**Finding:** against `patterns.holdout.ts`, sealed in commit `ac4aad0` before any rule code existed, the engine surfaces **6 of 34** applications it should. Against the known corpus the rules were written for, it surfaces 17 of 17.
+
+**Why it happened:** the rule set covers one family of fraud — income contradictions within a resolved household — and the sealed set contains six others it has no rule for: income bunching just below the ceiling, certificate serial adjacency, one certificate reused across applicants, family-size inflation, shared contact details across nominally distinct households, and deliberate household splitting.
+
+**What changed:** the figure is published as the headline accuracy number, with known recall labelled explicitly as a consistency check rather than evidence. No rules were written to close the gap.
+
+**Why no rules were written:** the holdout is now spent. Its patterns are known to the author, so any rule written against them can no longer be validated by them — that would measure memorisation, which is the exact failure the seal existed to prevent. Closing this gap honestly requires sealing a new set *before* writing those rules.
+
+## W4-3. Confidence filtering silently truncated numbers
+
+**Finding:** dropping Tesseract words below confidence 30 before assembling field values corrupted them rather than omitting them. `Rs. 1,78,000/-` came back as `Rs. 1,78,` because the final token scored 27, parsing cleanly to the wrong amount; certificate numbers lost their last group.
+
+**Why it mattered:** a truncated number is more dangerous than a low-confidence one. It arrives looking like a valid declaration, where a low-confidence read at least arrives labelled uncertain — and the household engine's income-contradiction rules act directly on that value.
+
+**What changed:** `app/ocr.py` now keeps every word Tesseract returns as text and reports per-field confidence instead. Filtering is the consumer's decision, and it can only make it if nothing was discarded first. Field accuracy went from 89.3% to **92.5%**, and documents fully correct from 61% to 70%.
+
+## W4-4. Extraction boxes were in the wrong coordinate space
+
+**Finding:** a test asserting boxes fall within the page caught that they were reported in *deskewed* coordinates. Deskew rotates with `expand=True`, so the levelled page is larger than the original and a box could have x beyond the original width.
+
+**What changed:** `deskew.to_original_coordinates` maps boxes back through the inverse rotation, so a reviewer's overlay drawn on the stored document lands in the right place. Coordinates that only make sense against a discarded intermediate are worse than useless — they look authoritative while being wrong.

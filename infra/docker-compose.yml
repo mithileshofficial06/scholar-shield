@@ -64,6 +64,24 @@ services:
       echo 'bucket ready — private, signed URLs only'
       "
 
+  # OCR + forensics. Built from source rather than pulled: it carries the
+  # Tesseract system package, and pinning that is part of what makes the
+  # published OCR accuracy reproducible.
+  ocr-service:
+    build:
+      context: ../apps/ocr-service
+    container_name: scholarshield-ocr
+    ports:
+      - "8000:8000"
+    environment:
+      OCR_TESSERACT_CMD: /usr/bin/tesseract
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
 volumes:
   postgres-data:
   redis-data:
