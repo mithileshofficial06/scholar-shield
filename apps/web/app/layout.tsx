@@ -4,6 +4,7 @@ import { Inter, JetBrains_Mono, Sora } from 'next/font/google';
 import { SiteNav } from './components/SiteNav';
 import './globals.css';
 import './styles/hero.css';
+import './styles/home.css';
 
 /**
  * Self-hosted at build time by next/font — no runtime request to Google, no
