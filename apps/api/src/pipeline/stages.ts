@@ -357,6 +357,16 @@ async function persistComponents(
   components: HouseholdComponent[],
 ): Promise<void> {
   await withTransaction(async (client) => {
+    // Two workers reconciling one cycle at once would each rebuild membership
+    // from their own snapshot and interleave. Serialize per cycle.
+    await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [cycle]);
+
+    // Membership is rebuilt from scratch on every run. Without clearing it, an
+    // application whose household was split — a reviewer rejecting the only
+    // edge — would keep pointing at the household it left, and every run
+    // would leave the previous run's household rows behind as orphans.
+    await client.query(`UPDATE applications SET household_id = NULL WHERE cycle = $1`, [cycle]);
+
     for (const component of components) {
       // A single-member component is not a household; leaving it unlinked keeps
       // `households` meaning "applications the resolver actually joined".
@@ -375,6 +385,13 @@ async function persistComponents(
         [householdId, component.applicationIds],
       );
     }
+
+    await client.query(
+      `DELETE FROM households h
+        WHERE h.cycle = $1
+          AND NOT EXISTS (SELECT 1 FROM applications a WHERE a.household_id = h.id)`,
+      [cycle],
+    );
   });
 }
 

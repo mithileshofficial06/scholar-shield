@@ -1,10 +1,13 @@
 import type { QueueItem } from '@scholarshield/shared';
+import type { CSSProperties, ReactNode } from 'react';
+import { AlertIcon, DatabaseIcon, LockIcon, ServerIcon } from '../components/Icons';
+import { QueueTable } from './QueueTable';
 
 /**
  * Reviewer risk queue.
  *
- * Server component so the queue fetch never reaches the browser. Week 6 adds the
- * detail view, the household graph, and the decision flow.
+ * Server component so the queue fetch never reaches the browser. The detail
+ * view, household graph, and decision flow come with the review workflow.
  */
 
 type QueueState =
@@ -28,131 +31,134 @@ async function fetchQueue(): Promise<QueueState> {
   }
 }
 
-function emptyCopy(state: QueueState): { headline: string; hint: string } {
-  switch (state.kind) {
-    case 'ok':
-      return {
-        headline: 'No applications awaiting review',
-        hint: 'Load the synthetic corpus with `npm run seed`.',
-      };
-    case 'unauthenticated':
-      return {
-        headline: 'Reviewer sign-in required',
-        hint: 'The API answered but this session carries no staff token. Sign-in lands in Week 6.',
-      };
-    case 'unreachable':
-      return {
-        headline: 'API unreachable',
-        hint: 'Start it with `npm run dev`.',
-      };
-    case 'error':
-      return {
-        headline: `API returned ${state.status}`,
-        hint: 'Check the API logs.',
-      };
-  }
-}
-
-function severityOf(item: QueueItem): 'high' | 'medium' | 'low' {
-  if (item.highSeverityCount > 0) return 'high';
-  if (item.flagCount > 0) return 'medium';
-  return 'low';
-}
+const d = (n: number) => ({ '--d': n }) as CSSProperties;
 
 export default async function DashboardPage() {
   const state = await fetchQueue();
   const items = state.kind === 'ok' ? state.items : [];
+  const live = state.kind === 'ok';
 
   const topScore = items.reduce((max, item) => Math.max(max, item.riskScore), 0) || 1;
   const highCount = items.filter((i) => i.highSeverityCount > 0).length;
   const flaggedCount = items.filter((i) => i.flagCount > 0).length;
 
+  const stats = [
+    { label: 'In queue', value: live ? String(items.length) : '—', tone: live ? '' : 'muted' },
+    // Severity colour only once there is a real number; a red dash reads as a risk bar.
+    { label: 'High severity', value: live ? String(highCount) : '—', tone: live ? 'sev-high' : 'muted' },
+    { label: 'Carrying flags', value: live ? String(flaggedCount) : '—', tone: live ? 'sev-medium' : 'muted' },
+    { label: 'Rule config', value: 'v1', tone: 'is-brand' },
+  ];
+
   return (
     <>
-      <section className="hero" style={{ paddingBottom: '2rem' }}>
-        <div className="hero-copy">
-          <p className="eyebrow">Reviewer console</p>
-          <h1 className="display">Queue</h1>
-          <p className="lede">
-            Ordered by score, then oldest first. A high score means{' '}
-            <strong>review this sooner</strong> — nothing more. Every decision requires a typed
-            reason and writes to an append-only audit log.
+      <section className="page-hero">
+        <div className="page-hero-bg" aria-hidden="true" />
+        <div className="container">
+          <span className="eyebrow rise" style={d(0)}>
+            <span className={`status-dot ${live ? 'is-live' : 'is-idle'}`} aria-hidden="true" />
+            Reviewer console · {live ? 'connected' : 'not connected'}
+          </span>
+          <h1 className="page-title rise" style={d(1)}>
+            Risk queue
+          </h1>
+          <p className="page-lede rise" style={d(2)}>
+            Ordered by score, then oldest first. A high score means <strong>review this sooner</strong>{' '}
+            — nothing more. Every decision needs a typed reason and lands in an append-only audit log.
           </p>
         </div>
       </section>
 
-      <section className="section" style={{ paddingTop: '2.5rem' }}>
-        <div className="metrics-strip">
-          <div className="metric">
-            <div className="metric-value">{items.length}</div>
-            <div className="metric-label">In queue</div>
+      <section className="section queue-section">
+        <div className="container">
+          <div className="stat-row">
+            {stats.map((stat, index) => (
+              <div key={stat.label} className="card stat-card rise" style={d(index + 2)}>
+                <p className="stat-label">{stat.label}</p>
+                <p className={`stat-value tabular ${stat.tone}`}>{stat.value}</p>
+              </div>
+            ))}
           </div>
-          <div className="metric">
-            <div className="metric-value sev-high">{highCount}</div>
-            <div className="metric-label">High severity</div>
-          </div>
-          <div className="metric">
-            <div className="metric-value sev-medium">{flaggedCount}</div>
-            <div className="metric-label">Carrying flags</div>
-          </div>
-          <div className="metric">
-            <div className="metric-value">v1</div>
-            <div className="metric-label">Rule config</div>
-          </div>
-        </div>
 
-        {items.length === 0 ? (
-          <div className="empty-state">
-            <p>{emptyCopy(state).headline}</p>
-            <p className="hint">{emptyCopy(state).hint}</p>
-          </div>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Score</th>
-                  <th>Severity</th>
-                  <th>Applicant</th>
-                  <th>District</th>
-                  <th>Leading signal</th>
-                  <th>Flags</th>
-                  <th>Filed</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item) => {
-                  const severity = severityOf(item);
-                  const pct = `${Math.round((item.riskScore / topScore) * 100)}%`;
-                  return (
-                    <tr key={item.id}>
-                      <td>
-                        <div className={`score-cell sev-${severity}`}>
-                          <span className="score-value">{item.riskScore.toFixed(0)}</span>
-                          <span className="score-bar">
-                            <span style={{ ['--pct' as string]: pct }} />
-                          </span>
-                        </div>
-                      </td>
-                      <td>
-                        <span className={`badge sev-${severity}`}>{severity}</span>
-                      </td>
-                      <td className="is-primary">{item.applicantName}</td>
-                      <td>{item.district}</td>
-                      <td>{item.topFlagReason ?? '—'}</td>
-                      <td>
-                        {item.flagCount}
-                        {item.highSeverityCount > 0 ? ` · ${item.highSeverityCount} high` : ''}
-                      </td>
-                      <td>{new Date(item.submittedAt).toLocaleDateString('en-IN')}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+          {state.kind === 'ok' && items.length > 0 ? (
+            <QueueTable items={items} topScore={topScore} />
+          ) : (
+            <div className="queue-locked">
+              <SkeletonRows />
+              <StateCard state={state} />
+            </div>
+          )}
+        </div>
       </section>
     </>
+  );
+}
+
+function StateCard({ state }: { state: QueueState }) {
+  let icon: ReactNode;
+  let title: string;
+  let body: ReactNode;
+  let tone = 'is-brand';
+
+  switch (state.kind) {
+    case 'unauthenticated':
+      icon = <LockIcon />;
+      title = 'Reviewer sign-in required';
+      body = (
+        <>
+          The API is running and answered, but this session carries no staff token. The sign-in
+          page is the next build step — the queue appears here as soon as it lands.
+        </>
+      );
+      break;
+    case 'unreachable':
+      icon = <ServerIcon />;
+      title = 'API unreachable';
+      tone = 'is-warn';
+      body = (
+        <>
+          Nothing answered at the API address. Start it with <code>npm run dev</code> and refresh.
+        </>
+      );
+      break;
+    case 'error':
+      icon = <AlertIcon />;
+      title = `API returned ${state.status}`;
+      tone = 'is-danger';
+      body = <>The API is up but failed this request. Check its terminal for the error.</>;
+      break;
+    default:
+      icon = <DatabaseIcon />;
+      title = 'No applications awaiting review';
+      body = (
+        <>
+          Load the synthetic corpus through the pipeline with <code>npm run seed -- --inline</code>.
+        </>
+      );
+  }
+
+  return (
+    <div className={`card state-card ${tone} rise`} style={d(6)}>
+      <span className="state-icon">{icon}</span>
+      <h2>{title}</h2>
+      <p>{body}</p>
+    </div>
+  );
+}
+
+/** Placeholder rows behind the state card, so the page shows the queue's shape. */
+function SkeletonRows() {
+  return (
+    <div className="card skeleton" aria-hidden="true">
+      {Array.from({ length: 6 }, (_, index) => (
+        <div key={index} className="skeleton-row">
+          <span style={{ width: '6%' }} />
+          <span style={{ width: '14%' }} />
+          <span style={{ width: '10%' }} />
+          <span style={{ width: '22%' }} />
+          <span style={{ width: '34%' }} />
+        </div>
+      ))}
+    </div>
   );
 }
