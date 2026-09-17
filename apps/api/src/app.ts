@@ -1,6 +1,7 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import { MulterError } from 'multer';
 import { config } from './config.js';
 import { attachSession } from './auth/middleware.js';
 import { healthRouter } from './routes/health.js';
@@ -8,6 +9,9 @@ import { authRouter } from './routes/auth.js';
 import { applicationsRouter } from './routes/applications.js';
 import { queueRouter } from './routes/queue.js';
 import { pipelineRouter } from './routes/pipeline.js';
+import { documentsRouter } from './routes/documents.js';
+import { householdsRouter } from './routes/households.js';
+import { adminRouter } from './routes/admin.js';
 
 /**
  * An AggregateError — which is what pg throws when a host resolves to both ::1 and
@@ -51,6 +55,9 @@ export function createApp() {
   app.use('/applications', applicationsRouter);
   app.use('/queue', queueRouter);
   app.use('/pipeline', pipelineRouter);
+  app.use('/documents', documentsRouter);
+  app.use('/households', householdsRouter);
+  app.use('/admin', adminRouter);
 
   app.use((_req: Request, res: Response) => {
     res.status(404).json({ error: 'not_found', message: 'No such route.' });
@@ -60,6 +67,20 @@ export function createApp() {
   app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
     // Always log server-side, whatever we choose to tell the client.
     console.error(`[error] ${req.method} ${req.originalUrl}`, err);
+
+    // Multer rejects oversized or malformed uploads before any handler runs.
+    // Without this they surface as a 500, which reads as "the server broke"
+    // rather than "that file is too big".
+    if (err instanceof MulterError) {
+      const tooLarge = err.code === 'LIMIT_FILE_SIZE';
+      res.status(tooLarge ? 413 : 400).json({
+        error: tooLarge ? 'file_too_large' : 'invalid_upload',
+        message: tooLarge
+          ? `That file is larger than the ${Math.round(config.MAX_UPLOAD_BYTES / (1024 * 1024))} MB limit.`
+          : 'That upload could not be read.',
+      });
+      return;
+    }
 
     if (hasCode(err, 'ECONNREFUSED')) {
       res.status(503).json({

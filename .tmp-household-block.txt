@@ -1,33 +1,3 @@
-/**
- * Household resolution and scoring, per cycle.
- *
- * Extracted from the pipeline stages because three callers need it and only one
- * of them has a document: the pipeline (a new upload), a CSV import (many
- * applications and no documents at all), and a reviewer rejecting a merge the
- * resolver proposed. Keying this on a document id would have forced the other
- * two to invent one.
- *
- * Rules are evaluated over the whole cycle in one pass — guardian contradictions
- * and address clusters compare applications ACROSS households, so scoring a
- * component in isolation cannot see them.
- */
-
-import type { RuleFinding } from '../household/rules.js';
-
-import { recordAudit } from '../audit.js';
-import { config } from '../config.js';
-import { query, withTransaction } from '../db.js';
-import {
-  componentFor,
-  detectComponents,
-  edgeKey,
-  type HouseholdComponent,
-} from './components.js';
-import { loadRulesConfig } from './config.js';
-import { normalizeIdentity } from './normalize.js';
-import { linkedPairs, type MatchField, type ResolutionInput } from './resolve.js';
-import { evaluateRules, type ScorableApplication } from './rules.js';
-
 // ------------------------------------------------- 4. Household reconcile
 
 interface ApplicationRow {
@@ -150,11 +120,11 @@ export interface ReconcileResult {
  * must not reappear the next time the resolver runs, or the rejection is
  * cosmetic.
  */
-export async function reconcileCycle(
-  cycle: string,
-  focusApplicationId: string | null = null,
+export async function householdReconcile(
+  documentId: string,
 ): Promise<ReconcileResult> {
-  const rows = await ensureNormalized(await applicationsInCycle(cycle));
+  const doc = await documentRow(documentId);
+  const rows = await ensureNormalized(await applicationsInCycle(doc.cycle));
 
   const pairs = linkedPairs(rows.map(toResolutionInput));
   const rejectedEdgeKeys = await loadRejectedEdgeKeys();
@@ -192,22 +162,18 @@ export async function reconcileCycle(
     { rejectedEdgeKeys },
   );
 
-  await persistComponents(cycle, components);
+  await persistComponents(doc.cycle, components);
 
-  // With a focus application: everything in the component it landed in — see
-  // the fan-out note in the pipeline stages module. Without one (a CSV import,
-  // or a reviewer rejecting an edge) every application in the cycle is affected,
-  // because membership may have changed anywhere in it.
-  const rescore = focusApplicationId
-    ? (componentFor(components, focusApplicationId)?.applicationIds ?? [focusApplicationId])
-    : rows.map((row) => row.id);
+  // Everything in the component the new application landed in — see the
+  // fan-out note in this module's header.
+  const touched = componentFor(components, doc.application_id);
 
   return {
-    cycle,
+    cycle: doc.cycle,
     applicationCount: rows.length,
     edgeCount: components.reduce((total, c) => total + c.edges.length, 0),
     componentCount: components.length,
-    rescore,
+    rescore: touched?.applicationIds ?? [doc.application_id],
   };
 }
 
@@ -294,13 +260,13 @@ export interface ScoreResult {
  * The `ON CONFLICT DO NOTHING` on that triple is what makes re-running the stage
  * safe under at-least-once delivery.
  */
-export async function scoreApplications(
-  cycle: string,
+export async function riskScore(
+  documentId: string,
   applicationIds: string[],
-  audit: { actorId: string | null; actorType: 'user' | 'system'; entityType: string; entityId: string },
 ): Promise<ScoreResult> {
+  const doc = await documentRow(documentId);
   const rulesConfig = loadRulesConfig();
-  const rows = await ensureNormalized(await applicationsInCycle(cycle));
+  const rows = await ensureNormalized(await applicationsInCycle(doc.cycle));
 
   const inputs = rows.map(toResolutionInput);
   const components = detectComponents(
@@ -334,34 +300,12 @@ export async function scoreApplications(
     const findings = findingsByApplication.get(applicationId) ?? [];
 
     await withTransaction(async (client) => {
-      // A flag is a claim about the application as it stands, not a log entry.
-      // When a reviewer rejects a merge, the contradiction that merge implied
-      // stops being true, and leaving the row behind would show a reviewer a
-      // finding the engine no longer makes — while inflating the queue's flag
-      // count for good. The audit log, which is the record of what happened,
-      // is untouched by this.
-      // Scoped to the active config version as well as the rule set: after a
-      // version bump the same rule would otherwise keep a v1 row beside its new
-      // v2 row and be counted twice. Which config produced a live flag is still
-      // stamped on it; reproducing an older score is the job of the versioned
-      // config file and the audit log, not of stale rows.
-      await client.query(
-        `DELETE FROM risk_flags
-          WHERE application_id = $1
-            AND NOT (rule_config_version = $3 AND rule_id = ANY($2::text[]))`,
-        [applicationId, findings.map((finding) => finding.ruleId), rulesConfig.version],
-      );
-
       for (const finding of findings) {
         const { rowCount } = await client.query(
           `INSERT INTO risk_flags
              (application_id, rule_id, rule_config_version, severity, weight, reason, evidence)
            VALUES ($1, $2, $3, $4, $5, $6, $7)
-           ON CONFLICT (application_id, rule_id, rule_config_version) DO UPDATE
-             SET severity = EXCLUDED.severity,
-                 weight   = EXCLUDED.weight,
-                 reason   = EXCLUDED.reason,
-                 evidence = EXCLUDED.evidence`,
+           ON CONFLICT (application_id, rule_id, rule_config_version) DO NOTHING`,
           [
             applicationId,
             finding.ruleId,
@@ -392,13 +336,12 @@ export async function scoreApplications(
   }
 
   await recordAudit({
-    actorId: audit.actorId,
-    actorType: audit.actorType,
+    actorId: null,
+    actorType: 'system',
     action: 'pipeline.scored',
-    entityType: audit.entityType,
-    entityId: audit.entityId,
-    detail: { cycle, scored: scored.length, flagsWritten, configVersion: rulesConfig.version },
+    entityType: 'document',
+    entityId: documentId,
+    detail: { scored: scored.length, flagsWritten, configVersion: rulesConfig.version },
   });
 
   return { scored, flagsWritten };
-}

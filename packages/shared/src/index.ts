@@ -112,6 +112,26 @@ export interface Household {
   edges: HouseholdEdge[];
 }
 
+/** A household member as the reviewer's graph draws it. */
+export interface HouseholdMember {
+  id: string;
+  applicantName: string;
+  guardianName: string;
+  district: string;
+  declaredAnnualIncome: number;
+  declaredFamilySize: number;
+  riskScore: number;
+  status: ApplicationStatus;
+}
+
+/** A resolved household plus the members and edges behind it. */
+export interface HouseholdView {
+  household: Household | null;
+  members: HouseholdMember[];
+  /** Edges touching these applications, including ones a reviewer rejected. */
+  edges: HouseholdEdge[];
+}
+
 export interface VerificationResult {
   id: string;
   applicationId: string;
@@ -129,7 +149,8 @@ export interface DocumentSummary {
   contentType: string;
   byteSize: number;
   sha256: string;
-  extractedFields: Record<string, { value: string; confidence: number }> | null;
+  /** OCR never guesses: a field it could not read arrives as null, with its confidence. */
+  extractedFields: Record<string, { value: string | null; confidence: number }> | null;
   tamperScore: number | null;
   purgedAt: string | null;
 }
@@ -200,6 +221,33 @@ export interface ReviewRequest {
   decision: ReviewDecision;
   /** Enforced at the database level, not only here. */
   reason: string;
+}
+
+export interface RejectEdgeRequest {
+  reason: string;
+}
+
+export interface InviteRequest {
+  email: string;
+  role: UserRole;
+}
+
+export interface StaffUser {
+  id: string;
+  email: string;
+  role: UserRole;
+  activatedAt: string | null;
+  invitedBy: string | null;
+  inviteExpiresAt: string | null;
+  createdAt: string;
+}
+
+export interface CycleSummary {
+  cycle: string;
+  applications: number;
+  awaitingReview: number;
+  decided: number;
+  flagged: number;
 }
 
 export interface TipRequest {

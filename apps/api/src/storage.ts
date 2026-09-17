@@ -27,7 +27,10 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
+import { createHash } from 'node:crypto';
+
 import { config } from './config.js';
+import { extensionFor, type SniffedType } from './uploads.js';
 
 export const s3 = new S3Client({
   region: config.S3_REGION,
@@ -45,8 +48,17 @@ export const s3 = new S3Client({
 const SIGNED_URL_TTL_SECONDS = 300;
 
 export function storageKeyFor(documentId: string, contentType: string): string {
-  const extension = contentType === 'application/pdf' ? 'pdf' : 'jpg';
+  // The extension follows the sniffed type, never the uploaded filename.
+  const extension = extensionFor(contentType as SniffedType) ?? 'bin';
   return `documents/${documentId}.${extension}`;
+}
+
+/**
+ * The hash kept in the audit trail after the document itself is purged, so a
+ * past decision stays traceable to a specific file without retaining the file.
+ */
+export function sha256(buffer: Buffer): string {
+  return createHash('sha256').update(buffer).digest('hex');
 }
 
 export async function put(

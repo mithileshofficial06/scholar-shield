@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { healthcheck } from '../db.js';
+import { mailConfigured } from '../mail.js';
 import { health as ocrHealth } from '../pipeline/ocrClient.js';
 
 export const healthRouter = Router();
@@ -28,6 +29,9 @@ healthRouter.get('/ready', async (_req, res) => {
       database,
       ocr: ocrState,
       tesseractVersion: ocr?.tesseractVersion ?? null,
+      // Not part of readiness: locally there is no SMTP server and sign-in links
+      // go to the log on purpose. Reported so nobody has to guess which it is.
+      mail: mailConfigured() ? 'smtp' : 'log',
     },
   });
 });

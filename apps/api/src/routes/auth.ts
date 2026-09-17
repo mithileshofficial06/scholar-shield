@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
+
+import { magicLinkMessage, sendMail } from '../mail.js';
 import { query, withTransaction } from '../db.js';
 import { recordAudit } from '../audit.js';
-import { verifyPassword } from '../auth/passwords.js';
+import { hashPassword, verifyPassword } from '../auth/passwords.js';
 import {
   createMagicLinkToken,
   hashToken,
@@ -122,13 +124,16 @@ authRouter.post('/applicant/request-link', loginLimiter, async (req, res) => {
     );
   });
 
+  const delivery = await sendMail(magicLinkMessage(parsed.data.email, token));
+
   // Always the same response, so this endpoint cannot enumerate applicants.
-  // In development the token is returned directly; there is no mail transport yet.
   const body: Record<string, unknown> = {
     status: 'sent',
     message: 'If that address is valid, a sign-in link has been sent.',
   };
-  if (config.NODE_ENV !== 'production') body.devToken = token;
+  // Only when mail genuinely has nowhere to go, and never in production: the
+  // local stack has no SMTP server, and a link nobody can reach is not a demo.
+  if (config.NODE_ENV !== 'production' && delivery.via === 'log') body.devToken = token;
 
   res.json(body);
 });
@@ -178,6 +183,64 @@ authRouter.post('/applicant/consume-link', loginLimiter, async (req, res) => {
 
   const token = issueSession({ kind: 'applicant', sub: session, applicationId: null });
   res.json({ token, expiresInHours: config.SESSION_TTL_HOURS });
+});
+
+// ------------------------------------------------------------ invitations
+
+const acceptInviteSchema = z.object({
+  token: z.string().min(10),
+  // Long rather than complex: length is what actually resists guessing, and a
+  // symbol rule mostly produces Password1! on a sticky note.
+  password: z.string().min(12).max(200),
+});
+
+/**
+ * Accept an invitation and set a password.
+ *
+ * Public, because the invitee has no session yet — the emailed token is the
+ * credential. It is stored hashed and consumed here, so a leaked database
+ * backup cannot be replayed into an account.
+ */
+authRouter.post('/accept-invite', loginLimiter, async (req, res) => {
+  const parsed = acceptInviteSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'invalid_request',
+      message: 'A valid invitation token and a password of at least 12 characters are required.',
+    });
+    return;
+  }
+
+  const { hash, salt } = await hashPassword(parsed.data.password);
+
+  const { rows } = await query<{ id: string; role: UserRole; email: string }>(
+    `UPDATE users
+        SET password_hash = $2, password_salt = $3, activated_at = now(),
+            invite_token = NULL, invite_expires_at = NULL
+      WHERE invite_token = $1
+        AND activated_at IS NULL
+        AND invite_expires_at > now()
+      RETURNING id, role, email`,
+    [hashToken(parsed.data.token), hash, salt],
+  );
+
+  const user = rows[0];
+  if (!user) {
+    res.status(401).json({ error: 'invalid_token', message: 'That invitation is invalid or expired.' });
+    return;
+  }
+
+  await recordAudit({
+    actorId: user.id,
+    actorType: 'user',
+    action: 'user.invite_accepted',
+    entityType: 'user',
+    entityId: user.id,
+    detail: { role: user.role },
+  });
+
+  const token = issueSession({ kind: 'staff', sub: user.id, role: user.role });
+  res.json({ token, role: user.role, email: user.email, expiresInHours: config.SESSION_TTL_HOURS });
 });
 
 authRouter.get('/me', (req, res) => {
