@@ -75,6 +75,7 @@
 }
 
 html {
+  overflow-x: clip;
   scroll-behavior: smooth;
   -webkit-text-size-adjust: 100%;
 }
@@ -243,6 +244,7 @@ code,
 }
 
 .site-header-inner {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 24px;
@@ -272,6 +274,9 @@ code,
 }
 
 .nav {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -647,8 +652,9 @@ code,
   }
 
   .nav-link {
-    padding: 8px 12px;
-    font-size: 14px;
+    padding: 7px 10px;
+    font-size: 13.5px;
+    white-space: nowrap;
   }
 
   .btn {
@@ -664,6 +670,10 @@ code,
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  .rise {
+    animation: none;
   }
 
   .js .reveal {

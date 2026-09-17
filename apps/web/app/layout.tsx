@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { Inter, JetBrains_Mono, Sora } from 'next/font/google';
 import { SiteNav } from './components/SiteNav';
 import './globals.css';
+import './styles/hero.css';
 
 /**
  * Self-hosted at build time by next/font — no runtime request to Google, no
@@ -59,7 +60,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <header className="site-header">
           <div className="container site-header-inner">
             <Link href="/" className="brand" aria-label="ScholarShield home">
-              <ShieldMark />
+              <ShieldMark id="shield-header" />
               <span className="brand-name">
                 Scholar<span>Shield</span>
               </span>
@@ -81,7 +82,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div className="footer-grid">
               <div>
                 <Link href="/" className="brand">
-                  <ShieldMark />
+                  <ShieldMark id="shield-footer" />
                   <span>
                     Scholar<span style={{ color: 'var(--text-2)', fontWeight: 500 }}>Shield</span>
                   </span>
@@ -128,11 +129,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   );
 }
 
-function ShieldMark() {
+/** `id` must differ per instance: two SVGs defining one gradient id is invalid HTML. */
+function ShieldMark({ id }: { id: string }) {
   return (
     <svg className="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
       <defs>
-        <linearGradient id="shield-grad" x1="0" y1="0" x2="1" y2="1">
+        <linearGradient id={id} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="#22d3ee" />
           <stop offset="0.5" stopColor="#7c8cff" />
           <stop offset="1" stopColor="#b18cff" />
@@ -140,7 +142,7 @@ function ShieldMark() {
       </defs>
       <path
         d="M16 2.5 5 6.6v8.2c0 7.1 4.7 12.4 11 14.7 6.3-2.3 11-7.6 11-14.7V6.6L16 2.5Z"
-        fill="url(#shield-grad)"
+        fill={`url(#${id})`}
       />
       <path
         d="m11 16.2 3.4 3.4 6.8-7"
