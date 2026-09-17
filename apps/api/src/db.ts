@@ -3,6 +3,18 @@ import { config } from './config.js';
 
 const { Pool } = pg;
 
+/**
+ * Return SQL `date` columns as 'YYYY-MM-DD' strings, not JS Dates.
+ *
+ * node-postgres parses a date into a Date at *local* midnight. Every consumer
+ * here treats dates as calendar strings — the rules build `${date}T00:00:00Z` —
+ * and a Date interpolates as "Thu Jul 23 2026 ... GMT+0530", which parses to NaN
+ * and made DEADLINE_PROXIMITY skip every application without a word. Converting
+ * the Date back instead would shift the day for any timezone east of UTC.
+ */
+const DATE_OID = 1082;
+pg.types.setTypeParser(DATE_OID, (value) => value);
+
 export const pool = new Pool({
   connectionString: config.DATABASE_URL,
   max: 10,
