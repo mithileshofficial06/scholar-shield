@@ -6,6 +6,7 @@ import './globals.css';
 import './styles/hero.css';
 import './styles/home.css';
 import './styles/pages.css';
+import './styles/queue.css';
 
 /**
  * Self-hosted at build time by next/font — no runtime request to Google, no
