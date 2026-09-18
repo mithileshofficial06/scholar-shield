@@ -40,6 +40,7 @@ interface ApplicationRow {
   district: string;
   declared_annual_income: string;
   declared_family_size: number;
+  certificate_id: string | null;
   issuing_office: string | null;
   certificate_issue_date: string | null;
   normalized_applicant_name: string | null;
@@ -51,8 +52,8 @@ interface ApplicationRow {
 async function applicationsInCycle(cycle: string): Promise<ApplicationRow[]> {
   const { rows } = await query<ApplicationRow>(
     `SELECT id, cycle, applicant_name, guardian_name, guardian_phone, address_line,
-            district, declared_annual_income, declared_family_size, issuing_office,
-            certificate_issue_date,
+            district, declared_annual_income, declared_family_size, certificate_id,
+            issuing_office, certificate_issue_date,
             normalized_applicant_name, normalized_guardian_name,
             normalized_address, normalized_phone
        FROM applications
@@ -129,8 +130,10 @@ function toScorable(row: ApplicationRow): ScorableApplication {
     declaredFamilySize: row.declared_family_size,
     normalizedGuardianName: row.normalized_guardian_name ?? '',
     normalizedAddress: row.normalized_address ?? '',
+    normalizedGuardianPhone: row.normalized_phone,
     issuingOffice: row.issuing_office,
     certificateIssueDate: row.certificate_issue_date,
+    certificateId: row.certificate_id,
   };
 }
 

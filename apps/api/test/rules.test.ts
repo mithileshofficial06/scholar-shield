@@ -16,8 +16,10 @@ function app(id: string, over: Partial<ScorableApplication> = {}): ScorableAppli
     declaredFamilySize: 4,
     normalizedGuardianName: 'raman subramaniam',
     normalizedAddress: '14 barati strit ayanavaram cenai',
+    normalizedGuardianPhone: null,
     issuingOffice: 'Ayanavaram Taluk Office',
     certificateIssueDate: '2026-05-10',
+    certificateId: `CERT-${id}`,
     ...over,
   };
 }
@@ -212,6 +214,104 @@ describe('ISSUING_OFFICE_MISMATCH', () => {
     expect(config.rules.ISSUING_OFFICE_MISMATCH!.weight).toBeLessThan(
       config.rules.SIBLING_INCOME_CONTRADICTION!.weight,
     );
+  });
+});
+
+describe('DUPLICATE_CERTIFICATE_ID', () => {
+  it('fires on both applications sharing one certificate serial number', () => {
+    const result = evaluate([
+      app('a', { certificateId: 'TN-CBE-2026-660214' }),
+      app('b', { certificateId: 'TN-CBE-2026-660214' }),
+    ]);
+
+    expect(rulesFiredFor(result, 'a')).toContain('DUPLICATE_CERTIFICATE_ID');
+    expect(rulesFiredFor(result, 'b')).toContain('DUPLICATE_CERTIFICATE_ID');
+  });
+
+  it('does not fire when certificate ids differ', () => {
+    const result = evaluate([app('a', { certificateId: 'TN-CBE-2026-1' }), app('b', { certificateId: 'TN-CBE-2026-2' })]);
+    expect(result.findings).toEqual([]);
+  });
+
+  it('ignores applications with no certificate id recorded', () => {
+    const result = evaluate([app('a', { certificateId: null }), app('b', { certificateId: null })]);
+    expect(result.findings).toEqual([]);
+  });
+
+  it('needs no tolerance — exact match alone is enough, at high severity', () => {
+    const result = evaluate([
+      app('a', { certificateId: 'TN-CBE-2026-660214' }),
+      app('b', { certificateId: 'TN-CBE-2026-660214' }),
+    ]);
+    const finding = result.findings.find((f) => f.ruleId === 'DUPLICATE_CERTIFICATE_ID')!;
+    expect(finding.severity).toBe('high');
+  });
+});
+
+describe('FAMILY_SIZE_CONTRADICTION', () => {
+  it('fires when one household disagrees on family size', () => {
+    const result = evaluate(
+      [app('a', { declaredFamilySize: 3 }), app('b', { declaredFamilySize: 7 })],
+      [link('a', 'b')],
+    );
+
+    expect(rulesFiredFor(result, 'a')).toContain('FAMILY_SIZE_CONTRADICTION');
+    expect(rulesFiredFor(result, 'b')).toContain('FAMILY_SIZE_CONTRADICTION');
+  });
+
+  it('does not fire when the household agrees on family size', () => {
+    const result = evaluate(
+      [app('a', { declaredFamilySize: 4 }), app('b', { declaredFamilySize: 4 })],
+      [link('a', 'b')],
+    );
+    expect(result.findings).toEqual([]);
+  });
+
+  it('does not fire across unlinked households', () => {
+    const result = evaluate([app('a', { declaredFamilySize: 3 }), app('b', { declaredFamilySize: 7 })]);
+    expect(result.findings).toEqual([]);
+  });
+
+  it('is medium severity — family size genuinely changes over time', () => {
+    const result = evaluate(
+      [app('a', { declaredFamilySize: 3 }), app('b', { declaredFamilySize: 7 })],
+      [link('a', 'b')],
+    );
+    const finding = result.findings.find((f) => f.ruleId === 'FAMILY_SIZE_CONTRADICTION')!;
+    expect(finding.severity).toBe('medium');
+  });
+});
+
+describe('SHARED_CONTACT_UNRELATED_HOUSEHOLDS', () => {
+  it('fires when the same contact number spans two unlinked households', () => {
+    const result = evaluate([
+      app('a', { normalizedGuardianPhone: '9840112233' }),
+      app('b', { normalizedGuardianPhone: '9840112233' }),
+    ]);
+
+    expect(rulesFiredFor(result, 'a')).toContain('SHARED_CONTACT_UNRELATED_HOUSEHOLDS');
+    expect(rulesFiredFor(result, 'b')).toContain('SHARED_CONTACT_UNRELATED_HOUSEHOLDS');
+  });
+
+  it('does not fire within a single household — one family, one number', () => {
+    const result = evaluate(
+      [app('a', { normalizedGuardianPhone: '9840112233' }), app('b', { normalizedGuardianPhone: '9840112233' })],
+      [link('a', 'b')],
+    );
+    expect(rulesFiredFor(result, 'a')).not.toContain('SHARED_CONTACT_UNRELATED_HOUSEHOLDS');
+  });
+
+  it('ignores applications with no phone recorded', () => {
+    const result = evaluate([app('a', { normalizedGuardianPhone: null }), app('b', { normalizedGuardianPhone: null })]);
+    expect(result.findings).toEqual([]);
+  });
+
+  it('does not fire when numbers differ', () => {
+    const result = evaluate([
+      app('a', { normalizedGuardianPhone: '9840112233' }),
+      app('b', { normalizedGuardianPhone: '9111000022' }),
+    ]);
+    expect(result.findings).toEqual([]);
   });
 });
 

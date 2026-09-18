@@ -37,6 +37,7 @@ export interface HarnessApplication {
   declaredFamilySize: number;
   issuingOffice: string;
   certificateIssueDate: string;
+  certificateId: string;
   cycle: string;
 }
 
@@ -95,8 +96,10 @@ function toScorable(caseId: string, app: HarnessApplication): ScorableApplicatio
     declaredFamilySize: app.declaredFamilySize,
     normalizedGuardianName: identity.normalizedGuardianName,
     normalizedAddress: identity.normalizedAddress,
+    normalizedGuardianPhone: identity.normalizedPhone,
     issuingOffice: app.issuingOffice,
     certificateIssueDate: app.certificateIssueDate,
+    certificateId: app.certificateId,
   };
 }
 

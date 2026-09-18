@@ -366,6 +366,92 @@ export const EQUITY_CASES: EquityCase[] = [
       },
     ],
   },
+
+  {
+    id: 'E-08-family-size-changed-between-certificates',
+    circumstance:
+      'An elder sibling married and moved out of the household between the two certificates. The family size genuinely shrank; income did not change.',
+    behaviour:
+      'One household, incomes agree, family sizes of 6 and 4. The naive reading is manipulation of per-capita income; the actual reading is one household member leaving.',
+    toleratedRules: ['FAMILY_SIZE_CONTRADICTION'],
+    applications: [
+      {
+        ref: 'h1',
+        applicantName: 'Saravanan Muthu',
+        guardianName: 'Muthu Kandasamy',
+        guardianPhone: '9843112255',
+        addressLine: '22 Kovil Street, Pollachi',
+        district: 'Coimbatore',
+        pincode: '642001',
+        declaredAnnualIncome: 91_000,
+        declaredFamilySize: 6,
+        certificateId: 'TN-CBE-2026-662201',
+        issuingOffice: 'Pollachi Taluk Office',
+        certificateIssueDate: '2026-02-14',
+        applicationDate: '2026-06-05',
+        cycle: '2026',
+      },
+      {
+        ref: 'h2',
+        applicantName: 'Kalpana Muthu',
+        guardianName: 'Muthu Kandasamy',
+        guardianPhone: '9843112255',
+        addressLine: '22 Kovil Street, Pollachi',
+        district: 'Coimbatore',
+        pincode: '642001',
+        declaredAnnualIncome: 93_500,
+        declaredFamilySize: 4,
+        certificateId: 'TN-CBE-2026-662350',
+        issuingOffice: 'Pollachi Taluk Office',
+        certificateIssueDate: '2026-06-09',
+        applicationDate: '2026-06-19',
+        cycle: '2026',
+      },
+    ],
+  },
+
+  {
+    id: 'E-09-shared-family-landline-unrelated-households',
+    circumstance:
+      'Two unrelated families in the same rural exchange area share one landline number because mobile coverage is unreliable — a documented pattern in several districts, not a coordinated filing.',
+    behaviour:
+      'Same contact number, different guardians, different addresses, different incomes. Should surface as a prompt to check the number, never as a high-severity finding.',
+    toleratedRules: ['SHARED_CONTACT_UNRELATED_HOUSEHOLDS'],
+    applications: [
+      {
+        ref: 'i1',
+        applicantName: 'Murugesan Palaniappan',
+        guardianName: 'Palaniappan Ayyanar',
+        guardianPhone: '9976003311',
+        addressLine: '3 Amman Koil Street, Usilampatti',
+        district: 'Madurai',
+        pincode: '625532',
+        declaredAnnualIncome: 69_000,
+        declaredFamilySize: 5,
+        certificateId: 'TN-MDU-2026-991144',
+        issuingOffice: 'Usilampatti Taluk Office',
+        certificateIssueDate: '2026-05-19',
+        applicationDate: '2026-06-04',
+        cycle: '2026',
+      },
+      {
+        ref: 'i2',
+        applicantName: 'Sasikala Rajendran',
+        guardianName: 'Rajendran Muthiah',
+        guardianPhone: '9976003311',
+        addressLine: '17 Bus Stand Road, Andipatti',
+        district: 'Theni',
+        pincode: '625512',
+        declaredAnnualIncome: 74_000,
+        declaredFamilySize: 4,
+        certificateId: 'TN-TNI-2026-330210',
+        issuingOffice: 'Andipatti Taluk Office',
+        certificateIssueDate: '2026-05-24',
+        applicationDate: '2026-06-06',
+        cycle: '2026',
+      },
+    ],
+  },
 ];
 
 export const EQUITY_APPLICATION_COUNT = EQUITY_CASES.reduce(

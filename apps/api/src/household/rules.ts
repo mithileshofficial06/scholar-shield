@@ -41,9 +41,11 @@ export interface ScorableApplication {
   declaredFamilySize: number;
   normalizedGuardianName: string;
   normalizedAddress: string;
+  normalizedGuardianPhone: string | null;
   issuingOffice: string | null;
   /** ISO date, or null when OCR could not read one. */
   certificateIssueDate: string | null;
+  certificateId: string | null;
 }
 
 export interface RuleFinding {
@@ -307,6 +309,161 @@ export function issuingOfficeMismatch(
 }
 
 /**
+ * The same certificate ID number appearing on more than one application.
+ *
+ * A genuine income certificate has a unique serial number issued once by one
+ * office. Reuse means one certificate — genuine or forged — was submitted twice,
+ * possibly under different applicant names. Unlike the income-comparison rules
+ * above, this needs no tolerance: the identifier either matches exactly or it
+ * doesn't, so it fires at high severity even for a single duplicate pair.
+ */
+export function duplicateCertificateId(
+  applications: readonly ScorableApplication[],
+  config: RuleConfig,
+): RuleFinding[] {
+  if (!config.enabled) return [];
+
+  const byCertificate = new Map<string, ScorableApplication[]>();
+  for (const app of applications) {
+    const id = app.certificateId?.trim();
+    if (!id) continue;
+    const bucket = byCertificate.get(id) ?? [];
+    bucket.push(app);
+    byCertificate.set(id, bucket);
+  }
+
+  const findings: RuleFinding[] = [];
+
+  for (const [certificateId, group] of byCertificate) {
+    if (group.length < 2) continue;
+
+    for (const app of group) {
+      const others = group.filter((a) => a.id !== app.id);
+      findings.push({
+        applicationId: app.id,
+        ruleId: 'DUPLICATE_CERTIFICATE_ID',
+        severity: config.severity,
+        weight: config.weight,
+        reason:
+          `Certificate ${certificateId} also appears on ${others.length} other application(s) ` +
+          `(${others.map((o) => o.applicantName).join(', ')}). One certificate serial number ` +
+          `should be issued to one household once.`,
+        evidence: {
+          certificateId,
+          otherApplicationIds: others.map((o) => o.id),
+          otherApplicantNames: others.map((o) => o.applicantName),
+        },
+      });
+    }
+  }
+
+  return findings;
+}
+
+/**
+ * Members of one resolved household declaring different family sizes.
+ *
+ * Several scholarship schemes weigh eligibility by per-capita income (income ÷
+ * family size), so understating family size on one certificate while the true
+ * size is visible from a sibling's certificate lowers the computed per-capita
+ * figure without touching the income line itself. `declaredFamilySize` is
+ * collected but was previously unused by any rule.
+ */
+export function familySizeContradiction(
+  component: HouseholdComponent,
+  byId: ReadonlyMap<string, ScorableApplication>,
+  config: RuleConfig,
+): RuleFinding[] {
+  if (!config.enabled || component.applicationIds.length < 2) return [];
+
+  const members = component.applicationIds
+    .map((id) => byId.get(id))
+    .filter((a): a is ScorableApplication => a !== undefined);
+
+  const sizes = new Set(members.map((a) => a.declaredFamilySize));
+  if (sizes.size < 2) return [];
+
+  return members.map((app) => ({
+    applicationId: app.id,
+    ruleId: 'FAMILY_SIZE_CONTRADICTION',
+    severity: config.severity,
+    weight: config.weight,
+    reason:
+      `This household's certificates disagree on family size — this application declares ` +
+      `${app.declaredFamilySize}, while others in the same household declare ` +
+      `${[...sizes].filter((s) => s !== app.declaredFamilySize).join(', ')}. Family size feeds ` +
+      `per-capita income eligibility, so a shrunk figure on one certificate changes the outcome.`,
+    evidence: {
+      householdKey: component.key,
+      thisFamilySize: app.declaredFamilySize,
+      distinctFamilySizes: [...sizes],
+    },
+  }));
+}
+
+/**
+ * The same contact phone number across applications resolved to *different*
+ * households.
+ *
+ * A phone number is harder to vary across a batch of fraudulent applications
+ * than a guardian's name or a street address, so it survives spoofing that
+ * defeats `GUARDIAN_INCOME_CONTRADICTION` (different name) and
+ * `ADDRESS_CLUSTER_UNRELATED` (different address). Same-household pairs are
+ * skipped for the same reason as the guardian rule — one fact, one flag.
+ */
+export function sharedContactUnrelatedHouseholds(
+  applications: readonly ScorableApplication[],
+  householdOf: ReadonlyMap<string, string>,
+  config: RuleConfig,
+): RuleFinding[] {
+  if (!config.enabled) return [];
+
+  const byPhone = new Map<string, ScorableApplication[]>();
+  for (const app of applications) {
+    if (!app.normalizedGuardianPhone) continue;
+    const bucket = byPhone.get(app.normalizedGuardianPhone) ?? [];
+    bucket.push(app);
+    byPhone.set(app.normalizedGuardianPhone, bucket);
+  }
+
+  const findings: RuleFinding[] = [];
+  const flagged = new Set<string>();
+
+  for (const [, group] of byPhone) {
+    if (group.length < 2) continue;
+
+    const households = new Set(group.map((a) => householdOf.get(a.id) ?? a.id));
+    if (households.size < 2) continue;
+
+    for (const app of group) {
+      if (flagged.has(app.id)) continue;
+      flagged.add(app.id);
+
+      const others = group.filter((a) => a.id !== app.id);
+      findings.push({
+        applicationId: app.id,
+        ruleId: 'SHARED_CONTACT_UNRELATED_HOUSEHOLDS',
+        severity: config.severity,
+        weight: config.weight,
+        reason:
+          `The contact number on this application also appears on ${others.length} ` +
+          `application(s) resolved to a different household (${others.map((o) => o.applicantName).join(', ')}). ` +
+          `A shared address can be explained by joint housing; a shared phone number across ` +
+          `unrelated families is harder to.`,
+        evidence: {
+          householdKey: householdOf.get(app.id) ?? app.id,
+          distinctHouseholds: households.size,
+          otherApplicationIds: others.map((o) => o.id),
+          otherApplicantNames: others.map((o) => o.applicantName),
+        },
+      });
+    }
+  }
+
+  return findings;
+}
+
+/**
  * Certificate obtained just before the deadline.
  *
  * Never fires alone — `requiresCorroboration` is enforced by the orchestrator
@@ -392,6 +549,7 @@ export function evaluateRules(
     findings.push(
       ...siblingIncomeContradiction(component, byId, rule('SIBLING_INCOME_CONTRADICTION')),
       ...issuingOfficeMismatch(component, byId, rule('ISSUING_OFFICE_MISMATCH')),
+      ...familySizeContradiction(component, byId, rule('FAMILY_SIZE_CONTRADICTION')),
     );
   }
 
@@ -402,6 +560,12 @@ export function evaluateRules(
       householdOf,
       rule('ADDRESS_CLUSTER_UNRELATED'),
       config.scholarshipIncomeCeiling,
+    ),
+    ...duplicateCertificateId(applications, rule('DUPLICATE_CERTIFICATE_ID')),
+    ...sharedContactUnrelatedHouseholds(
+      applications,
+      householdOf,
+      rule('SHARED_CONTACT_UNRELATED_HOUSEHOLDS'),
     ),
   );
 

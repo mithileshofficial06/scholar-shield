@@ -33,6 +33,24 @@
       "weight": 8,
       "note": "Weak on its own. A family that moved between certificate applications legitimately uses two offices."
     },
+    "DUPLICATE_CERTIFICATE_ID": {
+      "enabled": true,
+      "severity": "high",
+      "weight": 45,
+      "note": "No tolerance needed — a certificate serial number either matches exactly or it doesn't. Highest weight in the set: reuse of one certificate across applications is closer to direct evidence than an inference from declared figures."
+    },
+    "FAMILY_SIZE_CONTRADICTION": {
+      "enabled": true,
+      "severity": "medium",
+      "weight": 18,
+      "note": "Medium, not high. A family size recorded a year apart can genuinely change (a marriage, a death, a sibling moving out); disagreement is a prompt to check the certificates, not proof either one lies."
+    },
+    "SHARED_CONTACT_UNRELATED_HOUSEHOLDS": {
+      "enabled": true,
+      "severity": "medium",
+      "weight": 22,
+      "note": "Medium: a shared landline or a relative's number lent for contact purposes happens legitimately. Weighted above ADDRESS_CLUSTER_UNRELATED because a phone number is harder to share incidentally than a street address."
+    },
     "DEADLINE_PROXIMITY": {
       "enabled": true,
       "severity": "low",
