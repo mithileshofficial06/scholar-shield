@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Inter, JetBrains_Mono, Sora } from 'next/font/google';
+import { Inter, JetBrains_Mono, Space_Grotesk } from 'next/font/google';
 import { SessionControls } from './components/SessionControls';
 import { SiteNav } from './components/SiteNav';
 import { getSession } from './lib/session';
@@ -16,10 +16,10 @@ import './styles/detail.css';
  * Self-hosted at build time by next/font — no runtime request to Google, no
  * layout shift, and the page still renders correctly offline once built.
  */
-const sora = Sora({
+const grotesk = Space_Grotesk({
   subsets: ['latin'],
-  weight: ['400', '600', '700', '800'],
-  variable: '--font-sora',
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-grotesk',
   display: 'swap',
 });
 
@@ -54,7 +54,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html
       lang="en"
       data-scroll-behavior="smooth"
-      className={`${sora.variable} ${inter.variable} ${jetbrains.variable}`}
+      className={`${grotesk.variable} ${inter.variable} ${jetbrains.variable}`}
       suppressHydrationWarning
     >
       <head>
@@ -68,7 +68,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <header className="site-header">
           <div className="container site-header-inner">
             <Link href="/" className="brand" aria-label="ScholarShield home">
-              <ShieldMark id="shield-header" />
+              <ShieldMark />
               <span className="brand-name">
                 Scholar<span>Shield</span>
               </span>
@@ -92,9 +92,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <div className="footer-grid">
               <div>
                 <Link href="/" className="brand">
-                  <ShieldMark id="shield-footer" />
+                  <ShieldMark />
                   <span>
-                    Scholar<span style={{ color: 'var(--text-2)', fontWeight: 500 }}>Shield</span>
+                    Scholar<span className="brand-sub">Shield</span>
                   </span>
                 </Link>
                 <p>
@@ -139,29 +139,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   );
 }
 
-/** `id` must differ per instance: two SVGs defining one gradient id is invalid HTML. */
-function ShieldMark({ id }: { id: string }) {
+/** A flat shield sitting on its own hard shadow; colours come from `.brand-mark-*`. */
+function ShieldMark() {
+  const shield = 'M16 2.5 5 6.6v8.2c0 7.1 4.7 12.4 11 14.7 6.3-2.3 11-7.6 11-14.7V6.6L16 2.5Z';
   return (
     <svg className="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
-      <defs>
-        <linearGradient id={id} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#22d3ee" />
-          <stop offset="0.5" stopColor="#7c8cff" />
-          <stop offset="1" stopColor="#b18cff" />
-        </linearGradient>
-      </defs>
-      <path
-        d="M16 2.5 5 6.6v8.2c0 7.1 4.7 12.4 11 14.7 6.3-2.3 11-7.6 11-14.7V6.6L16 2.5Z"
-        fill={`url(#${id})`}
-      />
-      <path
-        d="m11 16.2 3.4 3.4 6.8-7"
-        fill="none"
-        stroke="#060912"
-        strokeWidth="2.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <path className="brand-mark-shadow" d={shield} transform="translate(2.5 2.5)" />
+      <path className="brand-mark-shield" d={shield} />
+      <path className="brand-mark-check" d="m11 16.2 3.4 3.4 6.8-7" />
     </svg>
   );
 }
