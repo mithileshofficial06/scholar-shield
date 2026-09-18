@@ -1,12 +1,16 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Inter, JetBrains_Mono, Sora } from 'next/font/google';
+import { SessionControls } from './components/SessionControls';
 import { SiteNav } from './components/SiteNav';
+import { getSession } from './lib/session';
 import './globals.css';
 import './styles/hero.css';
 import './styles/home.css';
 import './styles/pages.css';
 import './styles/queue.css';
+import './styles/auth.css';
+import './styles/detail.css';
 
 /**
  * Self-hosted at build time by next/font — no runtime request to Google, no
@@ -44,7 +48,8 @@ export const metadata: Metadata = {
  */
 const JS_FLAG = "document.documentElement.classList.add('js')";
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const session = await getSession();
   return (
     <html
       lang="en"
@@ -69,12 +74,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </span>
             </Link>
 
-            <SiteNav />
+            <SiteNav role={session?.role ?? null} />
 
             <span className="status-pill" title="Every record in this deployment is generated">
               <span className="live-dot" aria-hidden="true" />
               Synthetic data only
             </span>
+
+            <SessionControls role={session?.role ?? null} />
           </div>
         </header>
 

@@ -1,50 +1,67 @@
-import type { QueueItem } from '@scholarshield/shared';
+import type { CycleSummary, QueueItem } from '@scholarshield/shared';
+import Link from 'next/link';
 import type { CSSProperties, ReactNode } from 'react';
+
 import { AlertIcon, DatabaseIcon, LockIcon, ServerIcon } from '../components/Icons';
+import { apiGet, type ApiResult } from '../lib/session';
+import { QueueFilters } from './QueueFilters';
 import { QueueTable } from './QueueTable';
 
 /**
  * Reviewer risk queue.
  *
- * Server component so the queue fetch never reaches the browser. The detail
- * view, household graph, and decision flow come with the review workflow.
+ * A server component, so the queue and the session token never reach the
+ * browser. Filters arrive as search params and go straight into the API query;
+ * nothing is filtered here, which is what keeps the total honest.
  */
 
-type QueueState =
-  | { kind: 'ok'; items: QueueItem[] }
-  | { kind: 'unauthenticated' }
-  | { kind: 'unreachable' }
-  | { kind: 'error'; status: number };
-
-async function fetchQueue(): Promise<QueueState> {
-  const base = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
-  try {
-    const res = await fetch(`${base}/queue`, { cache: 'no-store' });
-    // 401 means the API answered — it is up, we are just not signed in. Reporting
-    // that as "unreachable" sends someone to restart a server that is running.
-    if (res.status === 401 || res.status === 403) return { kind: 'unauthenticated' };
-    if (!res.ok) return { kind: 'error', status: res.status };
-    const data = (await res.json()) as { items: QueueItem[] };
-    return { kind: 'ok', items: data.items ?? [] };
-  } catch {
-    return { kind: 'unreachable' };
-  }
+interface QueuePage {
+  items: QueueItem[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 const d = (n: number) => ({ '--d': n }) as CSSProperties;
 
-export default async function DashboardPage() {
-  const state = await fetchQueue();
-  const items = state.kind === 'ok' ? state.items : [];
-  const live = state.kind === 'ok';
+const FILTER_KEYS = ['status', 'severity', 'cycle', 'district', 'ruleId', 'q', 'offset'] as const;
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const query = new URLSearchParams();
+  for (const key of FILTER_KEYS) {
+    const value = params[key];
+    if (typeof value === 'string' && value !== '') query.set(key, value);
+  }
+  query.set('limit', '50');
+
+  const queue = await apiGet<QueuePage>(`/queue?${query.toString()}`);
+
+  // Facets are only fetched for a live session; without one the page is a
+  // sign-in prompt and these would be three more 401s.
+  const [rules, districts, cycles] =
+    queue.kind === 'ok'
+      ? await Promise.all([
+          apiGet<{ items: { ruleId: string; count: number }[] }>('/queue/rules'),
+          apiGet<{ items: string[] }>('/queue/districts'),
+          apiGet<{ items: CycleSummary[] }>('/admin/cycles'),
+        ])
+      : [null, null, null];
+
+  const items = queue.kind === 'ok' ? queue.data.items : [];
+  const total = queue.kind === 'ok' ? queue.data.total : 0;
+  const live = queue.kind === 'ok';
 
   const topScore = items.reduce((max, item) => Math.max(max, item.riskScore), 0) || 1;
   const highCount = items.filter((i) => i.highSeverityCount > 0).length;
   const flaggedCount = items.filter((i) => i.flagCount > 0).length;
 
   const stats = [
-    { label: 'In queue', value: live ? String(items.length) : '—', tone: live ? '' : 'muted' },
-    // Severity colour only once there is a real number; a red dash reads as a risk bar.
+    { label: 'Matching the filter', value: live ? String(total) : '—', tone: live ? '' : 'muted' },
     { label: 'High severity', value: live ? String(highCount) : '—', tone: live ? 'sev-high' : 'muted' },
     { label: 'Carrying flags', value: live ? String(flaggedCount) : '—', tone: live ? 'sev-medium' : 'muted' },
     { label: 'Rule config', value: 'v1', tone: 'is-brand' },
@@ -80,12 +97,21 @@ export default async function DashboardPage() {
             ))}
           </div>
 
-          {state.kind === 'ok' && items.length > 0 ? (
+          {live ? (
+            <QueueFilters
+              rules={rules?.kind === 'ok' ? rules.data.items : []}
+              districts={districts?.kind === 'ok' ? districts.data.items : []}
+              cycles={cycles?.kind === 'ok' ? cycles.data.items.map((c) => c.cycle) : []}
+              total={total}
+            />
+          ) : null}
+
+          {live && items.length > 0 ? (
             <QueueTable items={items} topScore={topScore} />
           ) : (
             <div className="queue-locked">
               <SkeletonRows />
-              <StateCard state={state} />
+              <StateCard state={queue} />
             </div>
           )}
         </div>
@@ -94,22 +120,33 @@ export default async function DashboardPage() {
   );
 }
 
-function StateCard({ state }: { state: QueueState }) {
-  let icon: ReactNode;
-  let title: string;
-  let body: ReactNode;
+function StateCard({ state }: { state: ApiResult<QueuePage> }) {
+  let icon: ReactNode = <DatabaseIcon />;
+  let title = 'No applications match this filter';
+  let body: ReactNode = (
+    <>
+      Clear the filters, or load the synthetic corpus with <code>npm run seed -- --inline</code>.
+    </>
+  );
   let tone = 'is-brand';
+  let action: ReactNode = null;
 
   switch (state.kind) {
     case 'unauthenticated':
       icon = <LockIcon />;
       title = 'Reviewer sign-in required';
-      body = (
-        <>
-          The API is running and answered, but this session carries no staff token. The sign-in
-          page is the next build step — the queue appears here as soon as it lands.
-        </>
+      body = <>The queue, and every application in it, is visible only to signed-in reviewers.</>;
+      action = (
+        <Link href="/login?next=/dashboard" className="btn btn-primary">
+          Sign in
+        </Link>
       );
+      break;
+    case 'forbidden':
+      icon = <LockIcon />;
+      title = 'This account cannot review';
+      tone = 'is-warn';
+      body = <>Your session is valid but lacks the reviewer role. Ask an administrator to grant it.</>;
       break;
     case 'unreachable':
       icon = <ServerIcon />;
@@ -125,16 +162,10 @@ function StateCard({ state }: { state: QueueState }) {
       icon = <AlertIcon />;
       title = `API returned ${state.status}`;
       tone = 'is-danger';
-      body = <>The API is up but failed this request. Check its terminal for the error.</>;
+      body = <>{state.message ?? 'The API is up but failed this request. Check its terminal.'}</>;
       break;
-    default:
-      icon = <DatabaseIcon />;
-      title = 'No applications awaiting review';
-      body = (
-        <>
-          Load the synthetic corpus through the pipeline with <code>npm run seed -- --inline</code>.
-        </>
-      );
+    case 'ok':
+      break;
   }
 
   return (
@@ -142,6 +173,7 @@ function StateCard({ state }: { state: QueueState }) {
       <span className="state-icon">{icon}</span>
       <h2>{title}</h2>
       <p>{body}</p>
+      {action ? <div className="state-action">{action}</div> : null}
     </div>
   );
 }
