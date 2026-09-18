@@ -48,7 +48,6 @@
   --violet: #c3a6ff;
   --cyan-soft: #d4f6fd;
   --indigo-soft: #e1e5ff;
-  --brand-gradient: var(--cyan);
 
   /* Fills: pills, bars, selected states. Always carry ink text. */
   --high: #ff5c5c;
