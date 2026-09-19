@@ -1,7 +1,8 @@
 'use client';
 
+import type { ApplicantApplicationView } from '@scholarshield/shared';
 import Link from 'next/link';
-import { createContext, useContext, useRef, useState, type FormEvent } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowIcon, CheckIcon, LockIcon, UploadIcon, AlertIcon, DatabaseIcon } from '../components/Icons';
 
 /**
@@ -41,8 +42,61 @@ const SECTIONS = [
   { title: 'Certificate', hint: 'The income certificate itself' },
 ];
 
-export default function ApplyPage() {
+/*
+ * A refresh must not throw away the applicant's work. The draft and, once sent,
+ * the receipt are kept in sessionStorage: per tab, gone when the tab closes, and
+ * never sent anywhere. The certificate file cannot be kept — browsers do not let
+ * a page refill a file input — so it is the one field a refresh loses.
+ */
+const DRAFT_KEY = 'ss_apply_draft';
+const RECEIPT_KEY = 'ss_apply_receipt';
+
+function readStored<T>(key: string): T | null {
+  try {
+    const raw = sessionStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+function store(key: string, value: unknown | null): void {
+  try {
+    if (value === null) sessionStorage.removeItem(key);
+    else sessionStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Storage blocked (private mode, disabled site data): the form still works,
+    // it just cannot survive a refresh.
+  }
+}
+
+/** Every named text-like field in the form, keyed by name. The file input is skipped. */
+function draftOf(form: HTMLFormElement): Record<string, string> {
+  const draft: Record<string, string> = {};
+  for (const input of Array.from(form.querySelectorAll<HTMLInputElement>('input[name]'))) {
+    if (input.type !== 'file' && input.value !== '') draft[input.name] = input.value;
+  }
+  return draft;
+}
+
+const STAGE_LABEL: Record<ApplicantApplicationView['stage'], string> = {
+  submitted: 'Received',
+  under_review: 'Under review',
+  decided: 'Decided',
+};
+
+/**
+ * @param existing The signed-in applicant's applications, read on the server.
+ *   Empty when nobody is signed in — a signed-out visitor is not asked who they are.
+ */
+export function ApplyForm({ existing }: { existing: ApplicantApplicationView[] }) {
   const [submitted, setSubmitted] = useState<Submitted | null>(null);
+  // A signed-in applicant who already applied sees that application first; the
+  // blank form is one deliberate click away, for a sibling applying on the same
+  // account. The API refuses a second application for the same person anyway.
+  const [applyingForAnother, setApplyingForAnother] = useState(false);
+  const [alreadyApplied, setAlreadyApplied] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -65,11 +119,50 @@ export default function ApplyPage() {
     );
   };
 
+  // Restore after a refresh. Runs once, after hydration, because sessionStorage
+  // does not exist on the server that rendered the first paint.
+  useEffect(() => {
+    const receipt = readStored<Submitted>(RECEIPT_KEY);
+    if (receipt) {
+      setSubmitted(receipt);
+      return;
+    }
+    const draft = readStored<Record<string, string>>(DRAFT_KEY);
+    const form = formRef.current;
+    if (!draft || !form) return;
+    for (const [name, value] of Object.entries(draft)) {
+      const input = form.elements.namedItem(name);
+      if (input instanceof HTMLInputElement && input.type !== 'file') input.value = value;
+    }
+    recompute();
+    // recompute reads the DOM, not state, so it is safe to leave out of the deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applyingForAnother]);
+
+  const onInput = () => {
+    recompute();
+    if (formRef.current) store(DRAFT_KEY, draftOf(formRef.current));
+  };
+
+  const startAnother = () => {
+    store(RECEIPT_KEY, null);
+    store(DRAFT_KEY, null);
+    setSubmitted(null);
+    setError(null);
+    setFieldErrors({});
+    setAlreadyApplied(false);
+    setFileName(null);
+    setComplete(SECTIONS.map(() => false));
+    setApplyingForAnother(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setBusy(true);
     setError(null);
     setFieldErrors({});
+    setAlreadyApplied(false);
 
     const data = new FormData(event.currentTarget);
     // An empty file input still submits a zero-byte part, which the API would
@@ -87,11 +180,13 @@ export default function ApplyPage() {
     }
 
     const body = (await res.json().catch(() => ({}))) as Partial<Submitted> & {
+      error?: string;
       message?: string;
       details?: FieldErrors;
     };
 
     if (!res.ok) {
+      setAlreadyApplied(body.error === 'already_applied');
       setFieldErrors(body.details ?? {});
       setError(
         res.status === 400
@@ -106,11 +201,14 @@ export default function ApplyPage() {
     }
 
     setSubmitted(body as Submitted);
+    store(RECEIPT_KEY, body);
+    store(DRAFT_KEY, null);
     setBusy(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const doneCount = complete.filter(Boolean).length;
+  const showingForm = !submitted && (existing.length === 0 || applyingForAnother);
 
   return (
     <>
@@ -136,32 +234,34 @@ export default function ApplyPage() {
       <section className="section apply-section">
         <div className="container apply-layout">
           <aside className="apply-aside">
-            <div className="card progress-card">
-              <div className="progress-head">
-                <p className="progress-title">Your progress</p>
-                <p className="progress-count tabular">
-                  {doneCount}/{SECTIONS.length}
-                </p>
+            {showingForm ? (
+              <div className="card progress-card">
+                <div className="progress-head">
+                  <p className="progress-title">Your progress</p>
+                  <p className="progress-count tabular">
+                    {doneCount}/{SECTIONS.length}
+                  </p>
+                </div>
+                <div className="progress-bar" aria-hidden="true">
+                  <span style={{ width: `${(doneCount / SECTIONS.length) * 100}%` }} />
+                </div>
+  
+                <ol className="step-list">
+                  {SECTIONS.map((section, index) => (
+                    <li
+                      key={section.title}
+                      className={`step-item${active === index ? ' is-active' : ''}${complete[index] ? ' is-done' : ''}`}
+                    >
+                      <span className="step-dot">{complete[index] ? <CheckIcon /> : index + 1}</span>
+                      <span>
+                        <span className="step-name">{section.title}</span>
+                        <span className="step-hint">{section.hint}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ol>
               </div>
-              <div className="progress-bar" aria-hidden="true">
-                <span style={{ width: `${(doneCount / SECTIONS.length) * 100}%` }} />
-              </div>
-
-              <ol className="step-list">
-                {SECTIONS.map((section, index) => (
-                  <li
-                    key={section.title}
-                    className={`step-item${active === index ? ' is-active' : ''}${complete[index] ? ' is-done' : ''}`}
-                  >
-                    <span className="step-dot">{complete[index] ? <CheckIcon /> : index + 1}</span>
-                    <span>
-                      <span className="step-name">{section.title}</span>
-                      <span className="step-hint">{section.hint}</span>
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            </div>
+            ) : null}
 
             <div className="card note-card">
               <p className="note-row">
@@ -204,17 +304,51 @@ export default function ApplyPage() {
                     Check application status
                     <ArrowIcon />
                   </Link>
-                  <Link href="/" className="btn btn-ghost">
-                    Return to overview
+                  <button type="button" className="btn btn-ghost" onClick={startAnother}>
+                    Apply for another family member
+                  </button>
+                </div>
+              </div>
+            ) : existing.length > 0 && !applyingForAnother ? (
+              <div className="card success-card">
+                <span className="success-icon">
+                  <CheckIcon />
+                </span>
+                <h2>You&rsquo;ve already applied</h2>
+                <p>Your application is saved. There is no need to fill in the form again.</p>
+                <ul className="existing-list">
+                  {existing.map((app) => (
+                    <li key={app.id}>
+                      <span>
+                        {app.cycle} cycle · submitted{' '}
+                        {new Date(app.submittedAt).toLocaleDateString('en-IN', { dateStyle: 'medium' })}
+                      </span>
+                      <strong>{STAGE_LABEL[app.stage]}</strong>
+                    </li>
+                  ))}
+                </ul>
+                <div className="success-actions">
+                  <Link href="/status" className="btn btn-primary">
+                    View application status
+                    <ArrowIcon />
                   </Link>
+                  <button type="button" className="btn btn-ghost" onClick={() => setApplyingForAnother(true)}>
+                    Apply for another family member
+                  </button>
                 </div>
               </div>
             ) : (
               <FieldErrorsContext.Provider value={fieldErrors}>
-                <form className="apply-form" onSubmit={onSubmit} onInput={recompute}>
+                <form ref={formRef} className="apply-form" onSubmit={onSubmit} onInput={onInput}>
                   {error ? (
                     <p className="auth-error" role="alert" ref={errorRef}>
                       {error}
+                      {alreadyApplied ? (
+                        <>
+                          {' '}
+                          <Link href="/status">Check its status</Link>
+                        </>
+                      ) : null}
                     </p>
                   ) : null}
 

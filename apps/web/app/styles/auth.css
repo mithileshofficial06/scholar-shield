@@ -236,3 +236,12 @@
   font-size: 12.5px;
   overflow-wrap: anywhere;
 }
+
+.auth-error a,
+.auth-note a {
+  color: var(--ink);
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}

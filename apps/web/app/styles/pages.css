@@ -511,3 +511,25 @@
 .input[aria-invalid='true'] {
   background: var(--high-soft);
 }
+
+.existing-list {
+  display: grid;
+  gap: 10px;
+  max-width: 460px;
+  margin: 22px auto 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.existing-list li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  font-size: 15px;
+}
