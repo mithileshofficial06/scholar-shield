@@ -885,3 +885,60 @@
 .verify-form .field {
   margin: 14px 0;
 }
+
+.check-group ul + .check-passed {
+  margin-top: 8px;
+}
+
+.check-passed {
+  border: 2px dashed var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--low-soft);
+}
+
+.check-passed[open] {
+  background: transparent;
+  border-style: solid;
+}
+
+.check-passed summary {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  align-items: center;
+  column-gap: 12px;
+  padding: 10px 14px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.check-passed summary::-webkit-details-marker {
+  display: none;
+}
+
+.check-passed-names {
+  grid-column: 2;
+  color: var(--text-3);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.check-passed[open] .check-passed-names {
+  display: none;
+}
+
+.check-passed ul {
+  padding: 0 10px 10px;
+}
+
+/* Not checked is information, not a problem: quieter than a failure or a wait. */
+.check.is-skipped {
+  border-style: dashed;
+  background: var(--surface-2);
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.check.is-skipped .check-detail {
+  font-size: 13.5px;
+}

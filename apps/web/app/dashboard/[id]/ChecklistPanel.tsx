@@ -19,7 +19,7 @@ const STATUS_LABEL: Record<CheckStatus, string> = {
 /**
  * Every check the engine runs on this application, with its outcome.
  *
- * The flag list above says what fired. This says everything else a reviewer
+ * The flag list below says what fired. This says everything else a reviewer
  * needs before trusting the absence of a flag: what was checked and held, what
  * could not be checked and why, and what is still waiting — including on them.
  */
@@ -28,28 +28,53 @@ export function ChecklistPanel({ checklist }: { checklist: ApplicationChecklist 
   return (
     <div className="checklist">
       <p className="checklist-summary">
-        {(['fail', 'pending', 'skipped', 'pass'] as const).map((status) => (
-          <span key={status} className={`check-count is-${status}`}>
-            <strong className="tabular">{summary[status]}</strong> {STATUS_LABEL[status].toLowerCase()}
-          </span>
-        ))}
+        {(['fail', 'pending', 'skipped', 'pass'] as const)
+          .filter((status) => summary[status] > 0)
+          .map((status) => (
+            <span key={status} className={`check-count is-${status}`}>
+              <strong className="tabular">{summary[status]}</strong> {STATUS_LABEL[status].toLowerCase()}
+            </span>
+          ))}
         <span className="checklist-version">rules {checklist.configVersion}</span>
       </p>
 
       {GROUPS.map((group) => {
         const checks = checklist.checks.filter((c) => c.group === group.key);
         if (checks.length === 0) return null;
+        // What needs a reviewer comes first and stays open; checks that held
+        // fold away. They are one click from view — never hidden — but a page
+        // of twenty equal-weight green cards buried the three red ones.
+        const attention = checks.filter((c) => c.status !== 'pass');
+        const passed = checks.filter((c) => c.status === 'pass');
         return (
           <section key={group.key} className="check-group">
             <h3>
               {group.title}
               <span>{group.hint}</span>
             </h3>
-            <ul>
-              {checks.map((check) => (
-                <CheckRow key={check.id} check={check} />
-              ))}
-            </ul>
+            {attention.length > 0 ? (
+              <ul>
+                {attention.map((check) => (
+                  <CheckRow key={check.id} check={check} />
+                ))}
+              </ul>
+            ) : null}
+            {passed.length > 0 ? (
+              <details className="check-passed">
+                <summary>
+                  <span className="check-badge is-pass" aria-hidden="true">
+                    <CheckIcon />
+                  </span>
+                  {attention.length === 0 ? `All ${passed.length} checks passed` : `${passed.length} more passed`}
+                  <span className="check-passed-names">{passed.map((c) => c.label).join(' · ')}</span>
+                </summary>
+                <ul>
+                  {passed.map((check) => (
+                    <CheckRow key={check.id} check={check} />
+                  ))}
+                </ul>
+              </details>
+            ) : null}
           </section>
         );
       })}
