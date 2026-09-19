@@ -18,7 +18,7 @@ export function SessionControls({ role }: { role: string | null }) {
   if (!role) {
     return (
       <Link href="/login" className="btn btn-ghost btn-sm">
-        Sign in
+        Staff sign in
       </Link>
     );
   }

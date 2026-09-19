@@ -24,7 +24,13 @@ export function SiteNav({ role }: { role?: string | null }) {
 
   const items = [
     ...PUBLIC,
-    ...(role === 'applicant' ? [{ href: '/status', label: 'My application' }] : []),
+    // Signed out, an applicant's way back in is a new emailed link, not the
+    // staff sign-in button beside this nav — so it gets its own entry.
+    ...(role === 'applicant'
+      ? [{ href: '/status', label: 'My application' }]
+      : !role
+        ? [{ href: '/status', label: 'Check my application' }]
+        : []),
     ...(isStaff ? STAFF : []),
     ...(role === 'admin' ? ADMIN : []),
   ];
