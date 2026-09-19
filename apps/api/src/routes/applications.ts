@@ -102,6 +102,12 @@ const submitSchema = z.object({
 
 const blank = (value: string | undefined) => (value === undefined || value === '' ? null : value);
 
+/** The one-application-per-person index (migration 003) refused the insert. */
+function isDuplicateApplication(err: unknown): boolean {
+  const pg = err as { code?: string; constraint?: string } | null;
+  return pg?.code === '23505' && pg.constraint === 'applications_one_per_person_idx';
+}
+
 /**
  * Submit an application.
  *
@@ -204,7 +210,22 @@ applicationsRouter.post('/', submitLimiter, upload.single('certificate'), async 
     );
 
     return { application, documentId };
+  }).catch((err: unknown) => {
+    // The whole transaction rolled back, the account upsert included, and the
+    // certificate upload comes after the insert that failed — nothing to clean up.
+    if (isDuplicateApplication(err)) return null;
+    throw err;
   });
+
+  if (!created) {
+    res.status(409).json({
+      error: 'already_applied',
+      message:
+        `An application for ${input.applicantName} under this email already exists for the ${cycle} cycle. ` +
+        'Check its status with a sign-in link instead of applying again.',
+    });
+    return;
+  }
 
   if (created.documentId) {
     await enqueueDocument({ documentId: created.documentId, applicationId: created.application.id });
