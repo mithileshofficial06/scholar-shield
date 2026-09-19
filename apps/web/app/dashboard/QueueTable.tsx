@@ -1,4 +1,5 @@
 import type { QueueItem } from '@scholarshield/shared';
+import Link from 'next/link';
 import type { CSSProperties } from 'react';
 
 function severityOf(item: QueueItem): 'high' | 'medium' | 'low' {
@@ -45,7 +46,9 @@ export function QueueTable({ items, topScore }: { items: QueueItem[]; topScore: 
                     <span className={`sev-pill sev-${severity}`}>{severity}</span>
                   </td>
                   <td>
-                    <span className="applicant">{item.applicantName}</span>
+                    <Link href={`/dashboard/${item.id}`} className="applicant applicant-link">
+                      {item.applicantName}
+                    </Link>
                     <span className="applicant-sub">{item.district}</span>
                   </td>
                   <td className="signal-cell" title={item.topFlagReason ?? undefined}>

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { loadRulesConfig } from '../src/household/config.js';
+import { ACTIVE_RULES_VERSION, loadRulesConfig } from '../src/household/config.js';
 import { detectComponents } from '../src/household/components.js';
 import { evaluateRules, type ScorableApplication } from '../src/household/rules.js';
 import type { PairResolution, ResolvedEdge } from '../src/household/resolve.js';
 
-const config = loadRulesConfig('v1');
+const config = loadRulesConfig();
 const DEADLINE = '2026-07-31';
 
 function app(id: string, over: Partial<ScorableApplication> = {}): ScorableApplication {
@@ -16,8 +16,10 @@ function app(id: string, over: Partial<ScorableApplication> = {}): ScorableAppli
     declaredFamilySize: 4,
     normalizedGuardianName: 'raman subramaniam',
     normalizedAddress: '14 barati strit ayanavaram cenai',
+    normalizedGuardianPhone: null,
     issuingOffice: 'Ayanavaram Taluk Office',
     certificateIssueDate: '2026-05-10',
+    certificateId: `CERT-${id}`,
     ...over,
   };
 }
@@ -45,9 +47,22 @@ const rulesFiredFor = (result: ReturnType<typeof evaluate>, id: string) =>
   result.findings.filter((f) => f.applicationId === id).map((f) => f.ruleId);
 
 describe('rule config', () => {
-  it('loads v1 and declares a matching version', () => {
-    expect(config.version).toBe('v1');
+  it('loads the active version and declares a matching version', () => {
+    expect(config.version).toBe(ACTIVE_RULES_VERSION);
     expect(config.rules.SIBLING_INCOME_CONTRADICTION?.enabled).toBe(true);
+  });
+
+  it('keeps v1 loadable, so a v1-stamped score stays reproducible', () => {
+    expect(loadRulesConfig('v1').version).toBe('v1');
+  });
+
+  it('v2 only adds a rule — every v1 rule is carried over unchanged', () => {
+    const v1 = loadRulesConfig('v1');
+    const v2 = loadRulesConfig('v2');
+    for (const [id, rule] of Object.entries(v1.rules)) expect(v2.rules[id]).toEqual(rule);
+    expect(Object.keys(v2.rules).filter((id) => !(id in v1.rules))).toEqual([
+      'DECLARED_INCOME_BELOW_CERTIFICATE',
+    ]);
   });
 
   it('refuses a version that does not exist', () => {
@@ -215,6 +230,104 @@ describe('ISSUING_OFFICE_MISMATCH', () => {
   });
 });
 
+describe('DUPLICATE_CERTIFICATE_ID', () => {
+  it('fires on both applications sharing one certificate serial number', () => {
+    const result = evaluate([
+      app('a', { certificateId: 'TN-CBE-2026-660214' }),
+      app('b', { certificateId: 'TN-CBE-2026-660214' }),
+    ]);
+
+    expect(rulesFiredFor(result, 'a')).toContain('DUPLICATE_CERTIFICATE_ID');
+    expect(rulesFiredFor(result, 'b')).toContain('DUPLICATE_CERTIFICATE_ID');
+  });
+
+  it('does not fire when certificate ids differ', () => {
+    const result = evaluate([app('a', { certificateId: 'TN-CBE-2026-1' }), app('b', { certificateId: 'TN-CBE-2026-2' })]);
+    expect(result.findings).toEqual([]);
+  });
+
+  it('ignores applications with no certificate id recorded', () => {
+    const result = evaluate([app('a', { certificateId: null }), app('b', { certificateId: null })]);
+    expect(result.findings).toEqual([]);
+  });
+
+  it('needs no tolerance — exact match alone is enough, at high severity', () => {
+    const result = evaluate([
+      app('a', { certificateId: 'TN-CBE-2026-660214' }),
+      app('b', { certificateId: 'TN-CBE-2026-660214' }),
+    ]);
+    const finding = result.findings.find((f) => f.ruleId === 'DUPLICATE_CERTIFICATE_ID')!;
+    expect(finding.severity).toBe('high');
+  });
+});
+
+describe('FAMILY_SIZE_CONTRADICTION', () => {
+  it('fires when one household disagrees on family size', () => {
+    const result = evaluate(
+      [app('a', { declaredFamilySize: 3 }), app('b', { declaredFamilySize: 7 })],
+      [link('a', 'b')],
+    );
+
+    expect(rulesFiredFor(result, 'a')).toContain('FAMILY_SIZE_CONTRADICTION');
+    expect(rulesFiredFor(result, 'b')).toContain('FAMILY_SIZE_CONTRADICTION');
+  });
+
+  it('does not fire when the household agrees on family size', () => {
+    const result = evaluate(
+      [app('a', { declaredFamilySize: 4 }), app('b', { declaredFamilySize: 4 })],
+      [link('a', 'b')],
+    );
+    expect(result.findings).toEqual([]);
+  });
+
+  it('does not fire across unlinked households', () => {
+    const result = evaluate([app('a', { declaredFamilySize: 3 }), app('b', { declaredFamilySize: 7 })]);
+    expect(result.findings).toEqual([]);
+  });
+
+  it('is medium severity — family size genuinely changes over time', () => {
+    const result = evaluate(
+      [app('a', { declaredFamilySize: 3 }), app('b', { declaredFamilySize: 7 })],
+      [link('a', 'b')],
+    );
+    const finding = result.findings.find((f) => f.ruleId === 'FAMILY_SIZE_CONTRADICTION')!;
+    expect(finding.severity).toBe('medium');
+  });
+});
+
+describe('SHARED_CONTACT_UNRELATED_HOUSEHOLDS', () => {
+  it('fires when the same contact number spans two unlinked households', () => {
+    const result = evaluate([
+      app('a', { normalizedGuardianPhone: '9840112233' }),
+      app('b', { normalizedGuardianPhone: '9840112233' }),
+    ]);
+
+    expect(rulesFiredFor(result, 'a')).toContain('SHARED_CONTACT_UNRELATED_HOUSEHOLDS');
+    expect(rulesFiredFor(result, 'b')).toContain('SHARED_CONTACT_UNRELATED_HOUSEHOLDS');
+  });
+
+  it('does not fire within a single household — one family, one number', () => {
+    const result = evaluate(
+      [app('a', { normalizedGuardianPhone: '9840112233' }), app('b', { normalizedGuardianPhone: '9840112233' })],
+      [link('a', 'b')],
+    );
+    expect(rulesFiredFor(result, 'a')).not.toContain('SHARED_CONTACT_UNRELATED_HOUSEHOLDS');
+  });
+
+  it('ignores applications with no phone recorded', () => {
+    const result = evaluate([app('a', { normalizedGuardianPhone: null }), app('b', { normalizedGuardianPhone: null })]);
+    expect(result.findings).toEqual([]);
+  });
+
+  it('does not fire when numbers differ', () => {
+    const result = evaluate([
+      app('a', { normalizedGuardianPhone: '9840112233' }),
+      app('b', { normalizedGuardianPhone: '9111000022' }),
+    ]);
+    expect(result.findings).toEqual([]);
+  });
+});
+
 describe('DEADLINE_PROXIMITY — never fires alone', () => {
   const lastMinute = { certificateIssueDate: '2026-07-25' };
 
@@ -267,7 +380,7 @@ describe('scoring', () => {
       [link('a', 'b')],
     );
 
-    expect(result.configVersion).toBe('v1');
+    expect(result.configVersion).toBe(ACTIVE_RULES_VERSION);
     expect(result.scores.get('a')).toBe(config.rules.SIBLING_INCOME_CONTRADICTION!.weight);
   });
 
@@ -291,5 +404,56 @@ describe('scoring', () => {
       expect(finding.reason.length).toBeGreaterThan(20);
       expect(Object.keys(finding.evidence).length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('DECLARED_INCOME_BELOW_CERTIFICATE', () => {
+  const read = (value: number, confidence = 0.92) => ({ certificateIncome: { value, confidence } });
+
+  it('fires on a lone applicant whose certificate shows more than they declared', () => {
+    const result = evaluate([app('a', { declaredAnnualIncome: 120_000, ...read(480_000) })]);
+    const finding = result.findings.find((f) => f.ruleId === 'DECLARED_INCOME_BELOW_CERTIFICATE');
+
+    expect(finding?.applicationId).toBe('a');
+    expect(finding?.severity).toBe('high');
+    expect(finding?.evidence).toMatchObject({ declaredIncome: 120_000, certificateIncome: 480_000, crossesCeiling: true });
+    expect(finding?.reason).toContain('eligibility ceiling');
+  });
+
+  it('separates the understating sibling from the honest one', () => {
+    // The case end-to-end testing surfaced: both siblings carried the same
+    // household contradiction and the same score, though only one lied.
+    const result = evaluate(
+      [
+        app('honest', { declaredAnnualIncome: 180_000, ...read(180_000) }),
+        app('understated', { declaredAnnualIncome: 120_000, ...read(480_000) }),
+      ],
+      [link('honest', 'understated')],
+    );
+
+    expect(rulesFiredFor(result, 'honest')).not.toContain('DECLARED_INCOME_BELOW_CERTIFICATE');
+    expect(rulesFiredFor(result, 'understated')).toContain('DECLARED_INCOME_BELOW_CERTIFICATE');
+    expect(result.scores.get('understated')!).toBeGreaterThan(result.scores.get('honest')!);
+  });
+
+  it('does not fire when the certificate agrees within tolerance', () => {
+    // ₹8,000 apart — 8% — inside both the 15% and the ₹12,000 tolerances.
+    const result = evaluate([app('a', { declaredAnnualIncome: 90_000, ...read(98_000) })]);
+    expect(rulesFiredFor(result, 'a')).not.toContain('DECLARED_INCOME_BELOW_CERTIFICATE');
+  });
+
+  it('does not fire when the applicant declared more than the certificate', () => {
+    const result = evaluate([app('a', { declaredAnnualIncome: 200_000, ...read(90_000) })]);
+    expect(rulesFiredFor(result, 'a')).not.toContain('DECLARED_INCOME_BELOW_CERTIFICATE');
+  });
+
+  it('does not trust a figure OCR was unsure of', () => {
+    const result = evaluate([app('a', { declaredAnnualIncome: 120_000, ...read(480_000, 0.5) })]);
+    expect(rulesFiredFor(result, 'a')).not.toContain('DECLARED_INCOME_BELOW_CERTIFICATE');
+  });
+
+  it('does nothing for an application without a read certificate', () => {
+    const result = evaluate([app('a', { declaredAnnualIncome: 120_000 }), app('b', { certificateIncome: null })]);
+    expect(result.findings.filter((f) => f.ruleId === 'DECLARED_INCOME_BELOW_CERTIFICATE')).toEqual([]);
   });
 });

@@ -5,7 +5,7 @@
 .compare {
   display: grid;
   grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
-  gap: 20px;
+  gap: 24px;
   align-items: stretch;
 }
 
@@ -16,49 +16,53 @@
 }
 
 .compare-card-hero {
-  border-color: rgba(124, 140, 255, 0.4);
-  background: linear-gradient(160deg, rgba(124, 140, 255, 0.12), rgba(34, 211, 238, 0.03) 60%), var(--surface);
+  background: var(--cyan-soft);
+  box-shadow: var(--shadow-lg);
 }
 
 .compare-kicker {
-  color: var(--text-3);
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  align-self: flex-start;
+  padding: 2px 10px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-family: var(--font-head);
+  font-size: 13.5px;
+  font-weight: 700;
 }
 
 .compare-kicker.is-brand {
-  color: #b9c3ff;
+  background: var(--cyan);
 }
 
 .compare-question {
-  margin-top: 10px;
+  margin-top: 14px;
   font-family: var(--font-head);
   font-size: clamp(22px, 2.4vw, 28px);
   font-weight: 700;
-  line-height: 1.25;
-  letter-spacing: -0.02em;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
 }
 
 .portal-mock {
   display: grid;
-  gap: 2px;
   margin: 24px 0 0;
-  padding: 6px 0;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: rgba(6, 9, 18, 0.45);
+  padding: 0;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
 }
 
 .portal-mock div {
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  padding: 10px 16px;
+  padding: 11px 16px;
 }
 
 .portal-mock div + div {
-  border-top: 1px solid var(--border);
+  border-top: 2px solid var(--ink);
 }
 
 .portal-mock dt {
@@ -70,12 +74,12 @@
   margin: 0;
   color: var(--text);
   font-size: 14.5px;
-  font-weight: 500;
+  font-weight: 600;
   text-align: right;
 }
 
 .portal-ok {
-  color: var(--low) !important;
+  color: var(--low-ink) !important;
 }
 
 .portal-muted {
@@ -85,7 +89,7 @@
 
 .signal-list {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   margin: 24px 0 0;
   padding: 0;
   list-style: none;
@@ -96,13 +100,15 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 16px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: rgba(6, 9, 18, 0.45);
+  padding: 13px 16px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
   color: var(--text);
   font-size: 16px;
+  font-weight: 500;
   line-height: 1.4;
+  box-shadow: var(--shadow-sm);
 }
 
 .compare-result {
@@ -114,7 +120,7 @@
 }
 
 .compare-result p {
-  margin-top: 2px;
+  margin-top: 4px;
   color: var(--text-2);
   font-size: 15.5px;
 }
@@ -122,9 +128,12 @@
 .compare-icon {
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  box-shadow: var(--shadow-sm);
   flex-shrink: 0;
 }
 
@@ -134,13 +143,11 @@
 }
 
 .is-pass .compare-icon {
-  background: var(--low-soft);
-  color: var(--low);
+  background: var(--low);
 }
 
 .is-flag .compare-icon {
-  background: var(--high-soft);
-  color: var(--high);
+  background: var(--high);
 }
 
 /* ------------------------------------------------------------ pipeline */
@@ -149,24 +156,23 @@
   position: relative;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 16px;
+  gap: 18px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-/* The line that threads the stages together, drawn behind the cards. */
+/* The rail that threads the stages together, drawn behind the cards. */
 .pipeline::before {
   content: '';
   position: absolute;
   top: 46px;
   left: 4%;
   right: 4%;
-  height: 2px;
-  background: linear-gradient(90deg, var(--cyan), var(--indigo), var(--violet));
-  opacity: 0.35;
+  height: var(--bw);
+  background: var(--ink);
   transform-origin: left;
-  animation: draw-line 1.6s var(--ease) 0.2s both;
+  animation: draw-line 1.2s var(--ease) 0.2s both;
   animation-play-state: paused;
 }
 
@@ -190,8 +196,7 @@
 }
 
 .pipeline-step.is-core {
-  border-color: rgba(124, 140, 255, 0.55);
-  background: linear-gradient(170deg, rgba(124, 140, 255, 0.18), rgba(34, 211, 238, 0.04) 70%), var(--surface);
+  background: var(--cyan);
   box-shadow: var(--glow);
 }
 
@@ -203,16 +208,20 @@
 }
 
 .pipeline-num {
+  padding: 1px 8px;
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
   font-family: var(--font-data);
   font-size: 13px;
   font-weight: 700;
-  color: var(--text-3);
 }
 
 .pipeline-step h3 {
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 1.3;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.25;
 }
 
 .pipeline-step p {
@@ -222,28 +231,37 @@
   line-height: 1.55;
 }
 
+.pipeline-step.is-core p {
+  color: var(--ink);
+}
+
+.pipeline-step.is-core .icon-tile {
+  background: var(--surface);
+}
+
 .pipeline-tag {
   align-self: flex-start;
   margin-top: auto;
   padding-top: 16px;
-  color: #aeb9ff;
+  color: var(--ink);
+  font-family: var(--font-head);
   font-size: 13px;
-  font-weight: 600;
-}
-
-.is-core .pipeline-tag {
-  color: var(--cyan);
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
 }
 
 .callout {
   display: flex;
   align-items: flex-start;
   gap: 16px;
-  margin-top: 28px;
+  margin-top: 32px;
   padding: 20px 24px;
+  border: var(--bw) solid var(--ink);
   border-radius: var(--radius);
-  border: 1px solid rgba(34, 211, 238, 0.3);
-  background: rgba(34, 211, 238, 0.06);
+  background: var(--indigo-soft);
+  box-shadow: var(--shadow);
 }
 
 .callout p {
@@ -254,11 +272,12 @@
 .callout-icon {
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  background: rgba(34, 211, 238, 0.14);
-  color: var(--cyan);
+  width: 42px;
+  height: 42px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--indigo);
+  color: var(--ink);
   flex-shrink: 0;
 }
 
@@ -272,37 +291,45 @@
 .metrics {
   display: grid;
   grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.5fr);
-  gap: 20px;
+  gap: 24px;
 }
 
+/* Amber on purpose: a low recall is a caution, and says so. */
 .metric-feature {
   display: flex;
   flex-direction: column;
   padding: clamp(26px, 3vw, 36px);
-  border-color: rgba(251, 191, 36, 0.35);
-  background: radial-gradient(120% 80% at 0% 0%, rgba(251, 191, 36, 0.12), transparent 60%), var(--surface);
+  background: var(--medium-soft);
+  box-shadow: var(--shadow-lg);
 }
 
 .metric-kicker {
-  color: #fcd98a;
-  font-size: 14px;
-  font-weight: 600;
+  align-self: flex-start;
+  padding: 2px 10px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--medium);
+  color: var(--ink);
+  font-family: var(--font-head);
+  font-size: 13.5px;
+  font-weight: 700;
 }
 
 .metric-hero {
-  margin-top: 12px;
+  margin-top: 14px;
   font-family: var(--font-head);
-  font-size: clamp(64px, 8vw, 96px);
-  font-weight: 800;
+  font-size: clamp(68px, 8.5vw, 104px);
+  font-weight: 700;
   line-height: 1;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.05em;
 }
 
 .meter {
-  height: 10px;
+  height: 22px;
   margin-top: 22px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.07);
+  border: var(--bw) solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
   overflow: hidden;
 }
 
@@ -310,12 +337,12 @@
   display: block;
   width: var(--fill);
   height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--medium), #fb923c);
+  border-right: var(--bw) solid var(--ink);
+  background: repeating-linear-gradient(-45deg, var(--medium) 0 8px, #ffc75a 8px 16px);
 }
 
 .metric-feature-sub {
-  margin-top: 12px;
+  margin-top: 14px;
   color: var(--text-2);
   font-size: 15.5px;
 }
@@ -330,7 +357,7 @@
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
+  gap: 18px;
 }
 
 .metric-card {
@@ -339,17 +366,20 @@
 
 .metric-label {
   color: var(--text-2);
+  font-family: var(--font-head);
   font-size: 14.5px;
   font-weight: 600;
 }
 
 .metric-value {
   margin-top: 8px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--ink);
   font-family: var(--font-head);
-  font-size: clamp(32px, 3.2vw, 40px);
+  font-size: clamp(34px, 3.4vw, 44px);
   font-weight: 700;
-  line-height: 1.1;
-  letter-spacing: -0.03em;
+  line-height: 1.05;
+  letter-spacing: -0.04em;
 }
 
 .metric-note {
@@ -360,17 +390,18 @@
 }
 
 .footnote {
-  margin-top: 22px;
+  margin-top: 24px;
   color: var(--text-3);
   font-size: 14px;
 }
 
 code {
-  padding: 2px 7px;
-  border-radius: 6px;
-  background: rgba(124, 140, 255, 0.14);
-  color: #c9d0ff;
-  font-size: 0.88em;
+  padding: 1px 6px;
+  border: 1.5px solid var(--ink);
+  border-radius: 3px;
+  background: var(--indigo-soft);
+  color: var(--ink);
+  font-size: 0.86em;
 }
 
 /* ---------------------------------------------------------- principles */
@@ -378,17 +409,26 @@ code {
 .principles {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
+  gap: 22px;
 }
 
 .principle {
   padding: 26px 24px;
 }
 
+/* Rotate the tile colour so a row of three never reads as one block. */
+.principle:nth-child(3n + 2) .icon-tile {
+  background: var(--violet);
+}
+
+.principle:nth-child(3n + 3) .icon-tile {
+  background: var(--indigo);
+}
+
 .principle h3 {
-  margin-top: 18px;
-  font-size: 19px;
-  font-weight: 600;
+  margin-top: 20px;
+  font-size: 20px;
+  font-weight: 700;
 }
 
 .principle p {
@@ -412,11 +452,11 @@ code {
 .roadmap::before {
   content: '';
   position: absolute;
-  top: 17px;
+  top: 18px;
   left: 18px;
   right: 18px;
-  height: 2px;
-  background: linear-gradient(90deg, var(--low) 0%, var(--low) 68%, var(--indigo) 76%, var(--border-strong) 88%);
+  height: var(--bw);
+  background: var(--ink);
 }
 
 .roadmap-item {
@@ -429,74 +469,81 @@ code {
 .roadmap-dot {
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   margin-bottom: 14px;
-  border-radius: 50%;
-  border: 2px solid var(--border-strong);
-  background: var(--bg);
-  color: #06140e;
+  border: var(--bw) solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
 }
 
 .roadmap-dot svg {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
 }
 
 .is-done .roadmap-dot {
-  border-color: var(--low);
   background: var(--low);
+  box-shadow: var(--shadow-sm);
 }
 
 .is-active .roadmap-dot {
-  border-color: var(--indigo);
-  box-shadow: 0 0 0 6px rgba(124, 140, 255, 0.2);
+  background: var(--indigo);
+  box-shadow: var(--shadow-sm);
 }
 
 .is-active .roadmap-dot::after {
   content: '';
   width: 12px;
   height: 12px;
-  border-radius: 50%;
-  background: var(--indigo);
-  animation: ping-soft 2s ease-in-out infinite;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  animation: pulse-square 1.6s ease-in-out infinite;
 }
 
-@keyframes ping-soft {
+@keyframes pulse-square {
   50% {
-    transform: scale(0.6);
-    opacity: 0.6;
+    transform: rotate(45deg) scale(0.75);
   }
 }
 
 .roadmap-week {
   color: var(--text-3);
-  font-size: 13.5px;
-  font-weight: 600;
+  font-family: var(--font-data);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .roadmap-title {
   font-family: var(--font-head);
   font-size: 16px;
-  font-weight: 600;
-  line-height: 1.3;
+  font-weight: 700;
+  line-height: 1.25;
 }
 
 .roadmap-status {
-  margin-top: 4px;
-  font-size: 13.5px;
-  font-weight: 500;
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 0 7px;
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  font-size: 12.5px;
+  font-weight: 700;
 }
 
 .is-done .roadmap-status {
-  color: var(--low);
+  background: var(--low-soft);
+  color: var(--ink);
 }
 
 .is-active .roadmap-status {
-  color: #aeb9ff;
+  background: var(--indigo-soft);
+  color: var(--ink);
 }
 
 .is-next .roadmap-status {
+  border-style: dashed;
   color: var(--text-3);
 }
 
@@ -509,25 +556,42 @@ code {
 .cta {
   position: relative;
   overflow: hidden;
-  padding: clamp(40px, 6vw, 72px) clamp(24px, 5vw, 64px);
+  padding: clamp(44px, 6vw, 76px) clamp(24px, 5vw, 64px);
   text-align: center;
-  border-color: rgba(124, 140, 255, 0.4);
-  background: linear-gradient(135deg, rgba(34, 211, 238, 0.12), rgba(124, 140, 255, 0.16) 50%, rgba(177, 140, 255, 0.12)), var(--surface);
+  background: var(--violet);
+  box-shadow: 10px 10px 0 0 var(--ink);
 }
 
+/* A pair of corner stickers; kept the old class name so markup is unchanged. */
 .cta-glow {
   position: absolute;
-  inset: -40% 20% auto;
-  height: 320px;
-  background: radial-gradient(closest-side, rgba(124, 140, 255, 0.5), transparent);
-  filter: blur(40px);
-  animation: float 14s ease-in-out infinite;
+  top: -34px;
+  right: -34px;
+  width: 120px;
+  height: 120px;
+  border: var(--bw) solid var(--ink);
+  border-radius: 50%;
+  background: var(--cyan);
+  pointer-events: none;
+}
+
+.cta::before {
+  content: '';
+  position: absolute;
+  bottom: -26px;
+  left: 36px;
+  width: 84px;
+  height: 84px;
+  border: var(--bw) solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--indigo);
+  transform: rotate(18deg);
   pointer-events: none;
 }
 
 .cta h2 {
   position: relative;
-  font-size: clamp(30px, 4.2vw, 48px);
+  font-size: clamp(32px, 4.4vw, 52px);
   font-weight: 700;
 }
 
@@ -535,7 +599,7 @@ code {
   position: relative;
   max-width: 58ch;
   margin: 16px auto 0;
-  color: var(--text-2);
+  color: var(--ink);
   font-size: 18px;
 }
 
@@ -544,8 +608,8 @@ code {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 14px;
-  margin-top: 32px;
+  gap: 16px;
+  margin-top: 34px;
 }
 
 /* ---------------------------------------------------------- responsive */
@@ -603,11 +667,15 @@ code {
     flex-direction: column;
     gap: 8px;
   }
+
+  .cta-glow,
+  .cta::before {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .pipeline::before,
-  .cta-glow,
   .is-active .roadmap-dot::after {
     animation: none;
   }

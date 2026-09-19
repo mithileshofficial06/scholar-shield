@@ -28,7 +28,7 @@ import { CYCLE_DEADLINE } from '../../../db/seed/types.js';
 import { loadRulesConfig } from '../src/household/config.js';
 import { evaluateCase, peakSeverity } from '../src/evaluation/harness.js';
 
-const config = loadRulesConfig('v1');
+const config = loadRulesConfig();
 const evaluate = (c: (typeof EQUITY_CASES)[number]) => evaluateCase(c, config, CYCLE_DEADLINE);
 
 describe('equity regression — legitimate circumstances must not read as fraud', () => {

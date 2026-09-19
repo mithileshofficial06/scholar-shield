@@ -1,0 +1,715 @@
+/* Queue filters and the application detail view. */
+
+/* --------------------------------------------------------------- filters */
+
+.filters {
+  padding: 18px 20px;
+  margin-bottom: 24px;
+  transition: opacity 0.2s;
+}
+
+.filters.is-pending {
+  opacity: 0.6;
+}
+
+.filter-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 14px;
+}
+
+.search-filter {
+  grid-column: span 2;
+  min-width: 0;
+}
+
+.filter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.filter-label {
+  color: var(--text);
+  font-family: var(--font-head);
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.filters .input {
+  min-height: 44px;
+  font-size: 15px;
+}
+
+.select {
+  appearance: none;
+  padding-right: 40px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink) 50%),
+    linear-gradient(135deg, var(--ink) 50%, transparent 50%);
+  background-position: calc(100% - 21px) 52%, calc(100% - 15px) 52%;
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+.select option {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.filter-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 2px solid var(--ink);
+}
+
+.filter-count {
+  color: var(--text-2);
+  font-size: 14.5px;
+  font-weight: 500;
+}
+
+.filter-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.applicant-link {
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  transition: background 0.12s;
+}
+
+.applicant-link:hover {
+  background: var(--cyan);
+}
+
+.state-action {
+  margin-top: 24px;
+}
+
+/* ---------------------------------------------------------------- detail */
+
+.detail-hero {
+  padding-bottom: 0;
+}
+
+.back-link {
+  display: inline-block;
+  margin-bottom: 20px;
+  padding: 4px 12px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-head);
+  font-size: 14.5px;
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--snap), box-shadow var(--snap);
+}
+
+.back-link:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 5px 5px 0 0 var(--ink);
+}
+
+.back-link:active {
+  transform: translate(3px, 3px);
+  box-shadow: none;
+}
+
+.detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.detail-sub {
+  margin-top: 10px;
+  color: var(--text-2);
+  font-size: 16px;
+}
+
+.detail-score {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 20px;
+  border: var(--bw) solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.detail-score-value {
+  font-family: var(--font-head);
+  font-size: 50px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+.detail-score-label {
+  color: var(--text-3);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.7;
+}
+
+.detail-section {
+  padding-top: clamp(28px, 4vw, 40px);
+}
+
+.detail-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.detail-main,
+.detail-aside {
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+}
+
+.panel {
+  padding: 24px;
+}
+
+.panel.is-compact {
+  padding: 20px;
+}
+
+.panel-head {
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 2px solid var(--ink);
+}
+
+.panel-head h2 {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.panel-head p {
+  margin-top: 6px;
+  color: var(--text-3);
+  font-size: 14.5px;
+}
+
+.panel-empty {
+  padding: 18px;
+  border: 2px dashed var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 15px;
+}
+
+/* ----------------------------------------------------------------- flags */
+
+.flag-list {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The severity strip sits inside the ink outline with its own ink rule, so
+   the card keeps a full border on every side. */
+.flag {
+  padding: 16px 18px 16px 30px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--sev, var(--surface-3)) 10px, var(--ink) 10px 12px, var(--surface) 12px);
+  box-shadow: var(--shadow-sm);
+}
+
+.flag-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.flag-rule {
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.flag-weight {
+  margin-left: auto;
+  padding: 0 7px;
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-family: var(--font-data);
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.flag-reason {
+  margin-top: 12px;
+  color: var(--text);
+  font-size: 15.5px;
+  line-height: 1.55;
+}
+
+.flag-evidence {
+  margin-top: 12px;
+}
+
+.flag-evidence summary {
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.flag-evidence summary:hover {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+}
+
+.flag-evidence dl {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 12px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.flag-evidence dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.flag-evidence dt {
+  color: var(--text-3);
+  font-size: 13.5px;
+}
+
+.flag-evidence dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: right;
+  word-break: break-word;
+}
+
+/* ------------------------------------------------------------- household */
+
+.household-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  margin-bottom: 16px;
+  color: var(--text-2);
+  font-size: 15px;
+}
+
+.member-list,
+.edge-list,
+.review-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.member {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.member.is-current {
+  background: var(--indigo-soft);
+  box-shadow: var(--shadow-sm);
+}
+
+.member-name {
+  font-weight: 700;
+}
+
+.member-tag {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  background: var(--indigo);
+  color: var(--ink);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.member-meta {
+  margin-top: 4px;
+  color: var(--text-3);
+  font-size: 13.5px;
+}
+
+.member-figures {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.member-income {
+  display: block;
+  font-family: var(--font-data);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.member-score {
+  display: block;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.household-edges-title {
+  margin: 24px 0 12px;
+  color: var(--text);
+  font-family: var(--font-head);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.edge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.edge.is-rejected {
+  border-style: dashed;
+  background: var(--surface-2);
+  color: var(--text-3);
+}
+
+.edge-pair {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.edge-meta {
+  margin-top: 3px;
+  color: var(--text-3);
+  font-size: 13.5px;
+}
+
+.edge-rejected {
+  color: var(--medium-ink);
+  font-weight: 700;
+}
+
+.edge-reject-form {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  flex: 1 1 320px;
+}
+
+.edge-reject-form .input {
+  flex: 1 1 200px;
+  min-height: 40px;
+  font-size: 14.5px;
+}
+
+.household-note {
+  margin-top: 16px;
+  color: var(--text-3);
+  font-size: 13.5px;
+}
+
+/* -------------------------------------------------------------- document */
+
+.document-panel + .document-panel {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 2px dashed var(--ink);
+}
+
+.document-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.document-name {
+  font-weight: 700;
+}
+
+.document-meta {
+  margin-top: 4px;
+  color: var(--text-3);
+  font-size: 12.5px;
+  word-break: break-all;
+}
+
+.document-note {
+  margin-top: 12px;
+  color: var(--text-3);
+  font-size: 13.5px;
+}
+
+.document-frame {
+  margin-top: 16px;
+}
+
+.document-frame img,
+.document-frame object {
+  width: 100%;
+  max-height: 520px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  object-fit: contain;
+}
+
+.document-frame object {
+  height: 520px;
+}
+
+.extract-table {
+  width: 100%;
+  margin-top: 18px;
+  border: 2px solid var(--ink);
+  border-collapse: collapse;
+}
+
+.extract-table th {
+  padding: 10px 12px;
+  border-bottom: 2px solid var(--ink);
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--font-head);
+  font-size: 13.5px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.extract-table td {
+  padding: 11px 12px;
+  border-bottom: 1.5px solid var(--ink);
+  font-size: 14.5px;
+  text-transform: capitalize;
+}
+
+.extract-table td.data {
+  text-transform: none;
+}
+
+.extract-table tr:last-child td {
+  border-bottom: 0;
+}
+
+/* --------------------------------------------------------------- aside */
+
+.detail-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+
+.detail-list > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1.5px dashed var(--ink);
+}
+
+.detail-list > div:last-child {
+  border-bottom: 0;
+}
+
+.detail-list dt {
+  color: var(--text-3);
+  font-size: 14px;
+}
+
+.detail-list dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 14.5px;
+  font-weight: 500;
+  text-align: right;
+  word-break: break-word;
+}
+
+.detail-list dd.is-strong {
+  font-family: var(--font-data);
+  font-weight: 700;
+}
+
+.verify-status {
+  margin-bottom: 12px;
+}
+
+.verify-note {
+  margin-bottom: 16px;
+  color: var(--text-2);
+  font-size: 14.5px;
+}
+
+/* -------------------------------------------------------------- decision */
+
+.decision-options {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 0;
+  border: 0;
+}
+
+.decision-option {
+  padding: 12px 14px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  cursor: pointer;
+  transition: background 0.12s, box-shadow var(--snap), transform var(--snap);
+}
+
+.decision-option:hover {
+  background: var(--paper);
+}
+
+/* Soft fills, not the bright ones: the hint text has to stay readable. */
+.decision-option.is-selected {
+  transform: translate(-2px, -2px);
+  box-shadow: var(--shadow-sm);
+}
+
+.decision-option.is-selected.sev-low {
+  background: var(--low-soft);
+}
+
+.decision-option.is-selected.sev-medium {
+  background: var(--medium-soft);
+}
+
+.decision-option.is-selected.sev-high {
+  background: var(--high-soft);
+}
+
+.decision-label {
+  display: block;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.decision-hint {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+
+.textarea {
+  min-height: 96px;
+  padding: 12px 16px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.decision .btn {
+  width: 100%;
+  margin-top: 18px;
+}
+
+.review-list li {
+  padding: 14px 0;
+  border-bottom: 1.5px dashed var(--ink);
+}
+
+.review-list li:last-child {
+  border-bottom: 0;
+}
+
+.review-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.review-when {
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.review-reason {
+  margin-top: 8px;
+  color: var(--text);
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+
+.review-by {
+  margin-top: 6px;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+@media (max-width: 1040px) {
+  .detail-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .search-filter {
+    grid-column: span 1;
+  }
+
+  .detail-head {
+    align-items: flex-start;
+  }
+
+  .member,
+  .edge {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .member-figures {
+    text-align: left;
+  }
+}

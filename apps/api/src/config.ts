@@ -26,6 +26,14 @@ const schema = z.object({
     .string()
     .default('https://tnedistrict.tn.gov.in/tneda/verify.xhtml'),
 
+  // Mail. Absent locally on purpose — see mail.ts. Required in production.
+  SMTP_URL: z.string().optional(),
+  MAIL_FROM: z.string().default('ScholarShield <no-reply@scholarshield.local>'),
+  INVITE_TTL_DAYS: z.coerce.number().int().positive().default(7),
+
+  // Upload limits. Matched to the OCR service's own cap (OCR_MAX_UPLOAD_BYTES).
+  MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(12 * 1024 * 1024),
+
   JWT_SECRET: z.string().min(16).default('dev-only-secret-do-not-use-in-production'),
   MAGIC_LINK_TTL_MINUTES: z.coerce.number().int().positive().default(20),
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(12),
@@ -34,6 +42,8 @@ const schema = z.object({
 
   SCHOLARSHIP_INCOME_CEILING: z.coerce.number().int().positive().default(250_000),
   CYCLE_DEADLINE: z.string().default('2026-07-31'),
+  /** The cycle a new submission joins when the form does not name one. */
+  CURRENT_CYCLE: z.string().regex(/^\d{4}$/).default('2026'),
 });
 
 const parsed = schema.safeParse(process.env);
@@ -51,5 +61,12 @@ export const isProduction = config.NODE_ENV === 'production';
 // A default secret is fine for local dev and tests; shipping one is not.
 if (isProduction && config.JWT_SECRET.startsWith('dev-only')) {
   console.error('JWT_SECRET must be set to a real value in production.');
+  process.exit(1);
+}
+
+// A deployment that cannot send a sign-in link cannot sign anyone in. Fail at
+// boot rather than at someone's first login attempt.
+if (isProduction && !config.SMTP_URL) {
+  console.error('SMTP_URL must be set in production: sign-in links cannot be delivered.');
   process.exit(1);
 }

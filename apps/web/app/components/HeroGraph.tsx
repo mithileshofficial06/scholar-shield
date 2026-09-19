@@ -6,7 +6,7 @@
  * become visible. The animation is the argument of the whole project: the
  * fraud is invisible per application and obvious per household.
  *
- * Pure SVG + CSS keyframes (see `.hg-*` in globals.css), so it costs no
+ * Pure SVG + CSS keyframes (see `.hg-*` in styles/hero.css), so it costs no
  * JavaScript and no re-renders. Every element runs on the same 12s cycle with
  * its own keyframe percentages, which keeps the phases in lock-step forever;
  * staggering with animation-delay would drift the fade-outs across the loop.
@@ -24,6 +24,8 @@ interface GraphNode {
 
 const NODE_W = 180;
 const NODE_H = 92;
+/** Hard offset shadow drawn under each card and the flag chip. */
+const SHADOW = 5;
 
 const NODES: GraphNode[] = [
   { key: 'a', ref: 'APP-0141', name: 'Karthik Raman', income: '₹96,000', x: 40, y: 48 },
@@ -53,16 +55,7 @@ export function HeroGraph() {
         role="img"
         aria-label="Three separately filed applications resolve into one household by guardian name and address. Two declare about ninety-five thousand rupees and the third one lakh seventy-eight thousand, so the engine flags a sibling income contradiction."
       >
-        <defs>
-          {/* userSpaceOnUse: a horizontal line has a zero-height bounding box, and a
-              bounding-box gradient on it renders nothing at all. */}
-          <linearGradient id="hg-edge" gradientUnits="userSpaceOnUse" x1="40" y1="0" x2="480" y2="0">
-            <stop offset="0" stopColor="#22d3ee" />
-            <stop offset="1" stopColor="#7c8cff" />
-          </linearGradient>
-        </defs>
-
-        <rect className="hg-boundary" x="16" y="16" width="488" height="328" rx="20" pathLength={1} />
+        <rect className="hg-boundary" x="16" y="16" width="488" height="328" rx="10" pathLength={1} />
 
         <line className="hg-edge hg-edge-1" x1="220" y1="94" x2="300" y2="94" pathLength={1} />
         <line className="hg-edge hg-edge-2" x1="362" y1="140" x2="318" y2="226" pathLength={1} />
@@ -82,12 +75,20 @@ export function HeroGraph() {
         {NODES.map((node) => (
           <g key={node.key} className={`hg-node hg-node-${node.key}`}>
             <rect
+              className="hg-shadow"
+              x={node.x + SHADOW}
+              y={node.y + SHADOW}
+              width={NODE_W}
+              height={NODE_H}
+              rx="6"
+            />
+            <rect
               className={node.key === 'c' ? 'hg-card hg-card-alert' : 'hg-card'}
               x={node.x}
               y={node.y}
               width={NODE_W}
               height={NODE_H}
-              rx="14"
+              rx="6"
             />
             <text className="hg-ref" x={node.x + 16} y={node.y + 26}>
               {node.ref}
@@ -106,7 +107,8 @@ export function HeroGraph() {
         ))}
 
         <g className="hg-chip">
-          <rect x="95" y="362" width="330" height="36" rx="18" />
+          <rect className="hg-shadow" x={95 + SHADOW} y={362 + SHADOW} width="330" height="36" rx="4" />
+          <rect className="hg-chip-face" x="95" y="362" width="330" height="36" rx="4" />
           <text x="260" y="385" textAnchor="middle">
             SIBLING_INCOME_CONTRADICTION · +40
           </text>

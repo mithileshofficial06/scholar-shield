@@ -4,6 +4,7 @@ import {
   normalizeIdentity,
   normalizeName,
   normalizePhone,
+  normalizeRupees,
 } from '../src/household/normalize.js';
 
 describe('normalizeName', () => {
@@ -78,6 +79,25 @@ describe('normalizePhone', () => {
     expect(normalizePhone('0000000000')).toBeNull(); // not a valid mobile prefix
     expect(normalizePhone(null)).toBeNull();
     expect(normalizePhone('')).toBeNull();
+  });
+});
+
+describe('normalizeRupees', () => {
+  it('reads certificate figures in the forms OCR returns them', () => {
+    expect(normalizeRupees('Rs. 4,80,000/-')).toBe(480_000);
+    expect(normalizeRupees('Rs. 1,80,000/')).toBe(180_000);
+    expect(normalizeRupees('₹96,000')).toBe(96_000);
+    expect(normalizeRupees('250000')).toBe(250_000);
+  });
+
+  it('drops paise instead of reading them as extra digits', () => {
+    expect(normalizeRupees('Rs. 1,80,000.00')).toBe(180_000);
+  });
+
+  it('returns null, not zero, when there is no figure to read', () => {
+    expect(normalizeRupees('Rs. /-')).toBeNull();
+    expect(normalizeRupees('')).toBeNull();
+    expect(normalizeRupees(null)).toBeNull();
   });
 });
 

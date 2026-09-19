@@ -22,6 +22,7 @@ const ruleSchema = z.object({
   minDistinctHouseholds: z.number().int().min(2).optional(),
   windowDays: z.number().int().positive().optional(),
   requiresCorroboration: z.boolean().optional(),
+  minOcrConfidence: z.number().min(0).max(1).optional(),
   // Prose kept alongside each rule explaining why it is weighted as it is.
   note: z.string().optional(),
 });
@@ -37,7 +38,10 @@ const configSchema = z.object({
 const here = path.dirname(fileURLToPath(import.meta.url));
 const configDir = path.resolve(here, '../../../../config');
 
-export function loadRulesConfig(version = 'v1'): RulesConfig {
+/** The version new flags are scored under. Older files stay loadable for reproduction. */
+export const ACTIVE_RULES_VERSION = 'v2';
+
+export function loadRulesConfig(version = ACTIVE_RULES_VERSION): RulesConfig {
   const file = path.join(configDir, `rules.${version}.json`);
   const parsed = configSchema.safeParse(JSON.parse(readFileSync(file, 'utf8')));
 
