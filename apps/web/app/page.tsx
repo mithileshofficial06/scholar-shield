@@ -70,7 +70,7 @@ const PIPELINE: { title: string; body: string; tag: string; icon: ReactNode; cor
   {
     title: 'Score and explain',
     body: 'Versioned weighted rules. Every flag carries its reason, rule id and config version.',
-    tag: 'rules.v1.json',
+    tag: 'rules.v2.json',
     icon: <ScaleIcon />,
   },
 ];

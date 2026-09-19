@@ -191,6 +191,23 @@ export function normalizePhone(raw: string | null | undefined): string | null {
   return last10;
 }
 
+/**
+ * A rupee figure as printed on a certificate, reduced to whole rupees.
+ * `Rs. 4,80,000/-`, `₹4,80,000.00` and `480000` are one amount. Paise are
+ * dropped rather than read as more digits, which would multiply the figure by a
+ * hundred. Anything without a number in it is null, not zero: an unread figure
+ * must not look like a declared income of nothing.
+ */
+export function normalizeRupees(raw: string | null | undefined): number | null {
+  if (!raw) return null;
+
+  const match = /\d[\d,]*(?:\.\d+)?/.exec(raw);
+  if (!match) return null;
+
+  const rupees = Number(match[0].split('.')[0]!.replace(/,/g, ''));
+  return Number.isSafeInteger(rupees) ? rupees : null;
+}
+
 /** Everything the resolver reads, derived from what the applicant declared. */
 export interface NormalizedIdentityFields {
   normalizedApplicantName: string;

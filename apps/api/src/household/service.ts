@@ -24,7 +24,7 @@ import {
   type HouseholdComponent,
 } from './components.js';
 import { loadRulesConfig } from './config.js';
-import { normalizeIdentity } from './normalize.js';
+import { normalizeIdentity, normalizeRupees } from './normalize.js';
 import { linkedPairs, type MatchField, type ResolutionInput } from './resolve.js';
 import { evaluateRules, type ScorableApplication } from './rules.js';
 
@@ -47,20 +47,38 @@ interface ApplicationRow {
   normalized_guardian_name: string | null;
   normalized_address: string | null;
   normalized_phone: string | null;
+  /** The OCR'd `annual_income` field of the latest document that has one. */
+  certificate_income: { value?: string; confidence?: number } | null;
 }
 
 async function applicationsInCycle(cycle: string): Promise<ApplicationRow[]> {
+  // Latest document only: a re-upload replaces what the applicant is standing
+  // behind, and an older certificate's figure is not a claim they still make.
   const { rows } = await query<ApplicationRow>(
-    `SELECT id, cycle, applicant_name, guardian_name, guardian_phone, address_line,
-            district, declared_annual_income, declared_family_size, certificate_id,
-            issuing_office, certificate_issue_date,
-            normalized_applicant_name, normalized_guardian_name,
-            normalized_address, normalized_phone
-       FROM applications
-      WHERE cycle = $1`,
+    `SELECT a.id, a.cycle, a.applicant_name, a.guardian_name, a.guardian_phone, a.address_line,
+            a.district, a.declared_annual_income, a.declared_family_size, a.certificate_id,
+            a.issuing_office, a.certificate_issue_date,
+            a.normalized_applicant_name, a.normalized_guardian_name,
+            a.normalized_address, a.normalized_phone,
+            d.certificate_income
+       FROM applications a
+       LEFT JOIN LATERAL (
+         SELECT extracted_fields -> 'annual_income' AS certificate_income
+           FROM documents
+          WHERE application_id = a.id AND extracted_fields ? 'annual_income'
+          ORDER BY created_at DESC
+          LIMIT 1
+       ) d ON true
+      WHERE a.cycle = $1`,
     [cycle],
   );
   return rows;
+}
+
+function toCertificateIncome(field: ApplicationRow['certificate_income']): ScorableApplication['certificateIncome'] {
+  const value = normalizeRupees(field?.value);
+  if (value === null || typeof field?.confidence !== 'number') return null;
+  return { value, confidence: field.confidence };
 }
 
 /** Fill in normalized columns for any application that lacks them. */
@@ -134,6 +152,7 @@ function toScorable(row: ApplicationRow): ScorableApplication {
     issuingOffice: row.issuing_office,
     certificateIssueDate: row.certificate_issue_date,
     certificateId: row.certificate_id,
+    certificateIncome: toCertificateIncome(row.certificate_income),
   };
 }
 

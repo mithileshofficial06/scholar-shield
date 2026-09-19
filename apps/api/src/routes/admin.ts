@@ -6,7 +6,7 @@
  *
  * WHY RULE CONFIG IS READ-ONLY HERE
  * ---------------------------------
- * `config/rules.v1.json` is checked into the repository and its version is
+ * `config/rules.<version>.json` is checked into the repository and its version is
  * stamped onto every risk_flags row, which is what makes a historical score
  * reproducible against the configuration that produced it (§5, §11). An endpoint
  * that edited weights in place would silently change what past flags meant, so
@@ -352,7 +352,7 @@ adminRouter.get('/rules', requireStaff(), (_req, res) => {
   res.json({
     version: rules.version,
     editable: false,
-    note: 'Weights are versioned in config/rules.v1.json and stamped onto every flag. Changing them is a new version file, so historical scores stay reproducible.',
+    note: `Weights are versioned in config/rules.${rules.version}.json and stamped onto every flag. Changing them is a new version file, so historical scores stay reproducible.`,
     config: rules,
   });
 });

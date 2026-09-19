@@ -24,6 +24,8 @@ export interface RuleConfig {
   minDistinctHouseholds?: number;
   windowDays?: number;
   requiresCorroboration?: boolean;
+  /** Below this OCR confidence a figure read off a document is not relied on. */
+  minOcrConfidence?: number;
 }
 
 export interface RulesConfig {
@@ -46,6 +48,12 @@ export interface ScorableApplication {
   /** ISO date, or null when OCR could not read one. */
   certificateIssueDate: string | null;
   certificateId: string | null;
+  /**
+   * The annual income printed on the applicant's own uploaded certificate, as OCR
+   * read it. Absent for applications with no document (a CSV import) or whose
+   * document has not been read yet.
+   */
+  certificateIncome?: { value: number; confidence: number } | null;
 }
 
 export interface RuleFinding {
@@ -464,6 +472,64 @@ export function sharedContactUnrelatedHouseholds(
 }
 
 /**
+ * An application declaring less income than its own certificate shows.
+ *
+ * Every other income rule needs a second application to compare against, so an
+ * applicant filing alone could declare any figure at all. This compares the form
+ * with the document uploaded beside it, which needs no household.
+ *
+ * One direction only. Declaring more than the certificate works against the
+ * applicant, and is far more often OCR noise or rounding than a lie. The same
+ * two-part tolerance as the household rules applies, and a figure OCR was unsure
+ * of is not used at all — a misread digit must not put an honest applicant at
+ * the top of the queue. The reviewer has the document beside the flag to check.
+ */
+export function declaredIncomeBelowCertificate(
+  applications: readonly ScorableApplication[],
+  config: RuleConfig,
+  ceiling: number,
+): RuleFinding[] {
+  if (!config.enabled) return [];
+
+  const minConfidence = config.minOcrConfidence ?? 0.8;
+  const findings: RuleFinding[] = [];
+
+  for (const app of applications) {
+    const certificate = app.certificateIncome;
+    if (!certificate || certificate.confidence < minConfidence) continue;
+    if (certificate.value <= app.declaredAnnualIncome) continue;
+    if (!exceedsTolerance(app.declaredAnnualIncome, certificate.value, config)) continue;
+
+    const crossesCeiling = certificate.value > ceiling && app.declaredAnnualIncome <= ceiling;
+
+    findings.push({
+      applicationId: app.id,
+      ruleId: 'DECLARED_INCOME_BELOW_CERTIFICATE',
+      severity: config.severity,
+      weight: config.weight,
+      reason:
+        `This application declares a household income of ${money(app.declaredAnnualIncome)}, but ` +
+        `the certificate uploaded with it reads ${money(certificate.value)} — ` +
+        `${describeGap(app.declaredAnnualIncome, certificate.value)} more.` +
+        (crossesCeiling
+          ? ` The certificate's figure is above the ${money(ceiling)} eligibility ceiling; the declared one is not.`
+          : '') +
+        ` Check the figure on the document itself: it was read by OCR.`,
+      evidence: {
+        declaredIncome: app.declaredAnnualIncome,
+        certificateIncome: certificate.value,
+        ocrConfidence: certificate.confidence,
+        differenceAbsolute: certificate.value - app.declaredAnnualIncome,
+        incomeCeiling: ceiling,
+        crossesCeiling,
+      },
+    });
+  }
+
+  return findings;
+}
+
+/**
  * Certificate obtained just before the deadline.
  *
  * Never fires alone — `requiresCorroboration` is enforced by the orchestrator
@@ -566,6 +632,11 @@ export function evaluateRules(
       applications,
       householdOf,
       rule('SHARED_CONTACT_UNRELATED_HOUSEHOLDS'),
+    ),
+    ...declaredIncomeBelowCertificate(
+      applications,
+      rule('DECLARED_INCOME_BELOW_CERTIFICATE'),
+      config.scholarshipIncomeCeiling,
     ),
   );
 

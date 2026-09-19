@@ -64,7 +64,7 @@ export default async function DashboardPage({
     { label: 'Matching the filter', value: live ? String(total) : '—', tone: live ? '' : 'muted' },
     { label: 'High severity', value: live ? String(highCount) : '—', tone: live ? 'sev-high' : 'muted' },
     { label: 'Carrying flags', value: live ? String(flaggedCount) : '—', tone: live ? 'sev-medium' : 'muted' },
-    { label: 'Rule config', value: 'v1', tone: 'is-brand' },
+    { label: 'Rule config', value: 'v2', tone: 'is-brand' },
   ];
 
   return (

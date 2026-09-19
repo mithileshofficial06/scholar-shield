@@ -23,7 +23,7 @@ import { CYCLE_DEADLINE } from '../../../db/seed/types.js';
 import { loadRulesConfig } from '../src/household/config.js';
 import { evaluateCase, measureRecall } from '../src/evaluation/harness.js';
 
-const config = loadRulesConfig('v1');
+const config = loadRulesConfig();
 
 describe('known-pattern recall', () => {
   it('catches every application the known corpus says should surface', () => {
