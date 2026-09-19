@@ -50,6 +50,7 @@ export default function ApplyPage() {
   const [complete, setComplete] = useState<boolean[]>(SECTIONS.map(() => false));
   const [fileName, setFileName] = useState<string | null>(null);
   const sectionRefs = useRef<(HTMLFieldSetElement | null)[]>([]);
+  const errorRef = useRef<HTMLParagraphElement>(null);
 
   /** A section is complete once every required field in it has a value. */
   const recompute = () => {
@@ -98,7 +99,9 @@ export default function ApplyPage() {
           : (body.message ?? 'Submission failed. Nothing was saved.'),
       );
       setBusy(false);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      // The banner renders on the next paint; scroll to it rather than to the
+      // page top, which sits above the form and would hide it again.
+      requestAnimationFrame(() => errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
       return;
     }
 
@@ -210,7 +213,7 @@ export default function ApplyPage() {
               <FieldErrorsContext.Provider value={fieldErrors}>
                 <form className="apply-form" onSubmit={onSubmit} onInput={recompute}>
                   {error ? (
-                    <p className="auth-error" role="alert">
+                    <p className="auth-error" role="alert" ref={errorRef}>
                       {error}
                     </p>
                   ) : null}

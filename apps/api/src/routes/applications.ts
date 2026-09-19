@@ -78,16 +78,26 @@ const submitSchema = z.object({
   email: z.string().email(),
   applicantName: z.string().min(2).max(120),
   guardianName: z.string().min(2).max(120),
-  guardianPhone: z.string().regex(/^\d{10}$/).optional().or(z.literal('')),
+  // Messages on the format checks: without one, zod says only "Invalid", and the
+  // apply form shows these to the applicant beside the field.
+  guardianPhone: z
+    .string()
+    .regex(/^\d{10}$/, 'Enter a 10-digit mobile number, digits only.')
+    .optional()
+    .or(z.literal('')),
   addressLine: z.string().min(4).max(240),
   district: z.string().min(2).max(80),
-  pincode: z.string().regex(/^\d{6}$/).optional().or(z.literal('')),
+  pincode: z.string().regex(/^\d{6}$/, 'Enter a 6-digit PIN code.').optional().or(z.literal('')),
   declaredAnnualIncome: numeric(z.number().int().min(0).max(100_000_000)),
   declaredFamilySize: numeric(z.number().int().min(1).max(30)),
   certificateId: z.string().max(60).optional().or(z.literal('')),
   issuingOffice: z.string().max(120).optional().or(z.literal('')),
-  certificateIssueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal('')),
-  cycle: z.string().regex(/^\d{4}$/).optional(),
+  certificateIssueDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Enter the date as YYYY-MM-DD.')
+    .optional()
+    .or(z.literal('')),
+  cycle: z.string().regex(/^\d{4}$/, 'The cycle is a four-digit year.').optional(),
 });
 
 const blank = (value: string | undefined) => (value === undefined || value === '' ? null : value);

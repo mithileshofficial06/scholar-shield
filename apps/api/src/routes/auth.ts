@@ -22,6 +22,12 @@ const loginLimiter = rateLimit({
   limit: 10,
   standardHeaders: true,
   legacyHeaders: false,
+  // JSON like every other error here. The default is a plain-text body, which
+  // the sign-in forms cannot parse and so report as the service being down.
+  message: {
+    error: 'rate_limited',
+    message: 'Too many sign-in attempts from this address. Wait a few minutes and try again.',
+  },
 });
 
 // ---------------------------------------------------------------- staff login
