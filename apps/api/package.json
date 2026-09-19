@@ -15,7 +15,8 @@
     "metrics": "tsx scripts/metrics.ts",
     "seed:documents": "tsx scripts/seed-documents.ts",
     "worker": "tsx watch src/pipeline/main.ts",
-    "worker:start": "node dist/pipeline/main.js"
+    "worker:start": "node dist/pipeline/main.js",
+    "reprocess": "tsx scripts/reprocess.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.716.0",

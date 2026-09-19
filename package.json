@@ -24,7 +24,8 @@
     "infra:up": "docker compose -f infra/docker-compose.yml up -d",
     "infra:down": "docker compose -f infra/docker-compose.yml down",
     "seed:documents": "npm run seed:documents --workspace apps/api",
-    "worker": "npm run worker --workspace apps/api"
+    "worker": "npm run worker --workspace apps/api",
+    "reprocess": "npm run reprocess --workspace apps/api --"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^1.0.7",

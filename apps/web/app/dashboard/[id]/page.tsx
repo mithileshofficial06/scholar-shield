@@ -1,13 +1,15 @@
-import type { ApplicationDetail, HouseholdView, ReviewRecord } from '@scholarshield/shared';
+import type { ApplicationChecklist, ApplicationDetail, HouseholdView, ReviewRecord } from '@scholarshield/shared';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { CSSProperties } from 'react';
 
-import { ArrowIcon, LockIcon } from '../../components/Icons';
+import { LockIcon } from '../../components/Icons';
 import { apiGet } from '../../lib/session';
+import { ChecklistPanel } from './ChecklistPanel';
 import { DecisionForm } from './DecisionForm';
 import { DocumentPanel } from './DocumentPanel';
 import { HouseholdGraph } from './HouseholdGraph';
+import { VerificationForm } from './VerificationForm';
 
 /**
  * One application, as the reviewer sees it.
@@ -75,9 +77,10 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
   }
 
   const application = detail.data;
-  const [household, reviews] = await Promise.all([
+  const [household, reviews, checklist] = await Promise.all([
     apiGet<HouseholdView>(`/applications/${id}/household`),
     apiGet<{ items: ReviewWithEmail[] }>(`/applications/${id}/reviews`),
+    apiGet<ApplicationChecklist>(`/applications/${id}/checks`),
   ]);
 
   const severity =
@@ -131,6 +134,19 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
       <section className="section detail-section">
         <div className="container detail-layout">
           <div className="detail-main">
+            <Panel
+              title="Verification checks"
+              subtitle="Every check run on this application — passed, failed, not checkable, or waiting."
+            >
+              {checklist.kind === 'ok' ? (
+                <ChecklistPanel checklist={checklist.data} />
+              ) : (
+                <div className="panel-empty">
+                  <p>The checklist could not be loaded.</p>
+                </div>
+              )}
+            </Panel>
+
             <Panel
               title={`Why this surfaced${application.flags.length ? ` · ${application.flags.length}` : ''}`}
               subtitle="Each flag names the rule, its weight, and the values behind it."
@@ -223,31 +239,8 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
               </dl>
             </Panel>
 
-            <Panel title="Certificate check" compact>
-              {application.verification ? (
-                <>
-                  <p className="verify-status">
-                    <span className="sev-pill sev-medium">
-                      {application.verification.status.replaceAll('_', ' ')}
-                    </span>
-                  </p>
-                  <p className="verify-note">
-                    ScholarShield never contacts a government portal itself. Open the pre-filled
-                    lookup, check it yourself, and record what you saw in your decision.
-                  </p>
-                  <a
-                    className="btn btn-ghost btn-sm"
-                    href={application.verification.manualCheckUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Open state portal
-                    <ArrowIcon />
-                  </a>
-                </>
-              ) : (
-                <p className="verify-note">No verification link yet.</p>
-              )}
+            <Panel title="Government record" compact>
+              <VerificationForm applicationId={application.id} verification={application.verification} />
             </Panel>
 
             <Panel title="Decision" compact>

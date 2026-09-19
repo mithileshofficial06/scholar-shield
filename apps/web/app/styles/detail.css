@@ -713,3 +713,175 @@
     text-align: left;
   }
 }
+
+/* ------------------------------------------------------------ checklist */
+
+.checklist-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.check-count {
+  padding: 4px 10px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.check-count.is-pass { background: var(--low-soft); }
+.check-count.is-fail { background: var(--high-soft); }
+.check-count.is-pending { background: var(--medium-soft); }
+.check-count.is-skipped { background: var(--surface-2); }
+
+.checklist-version {
+  margin-left: auto;
+  color: var(--text-3);
+  font-family: var(--font-data);
+  font-size: 12.5px;
+}
+
+.check-group + .check-group {
+  margin-top: 20px;
+}
+
+.check-group h3 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin-bottom: 8px;
+  font-size: 16px;
+}
+
+.check-group h3 span {
+  color: var(--text-3);
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.check-group ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.check {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.check.is-fail {
+  background: var(--high-soft);
+  box-shadow: var(--shadow-sm);
+}
+
+.check-badge {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  font-weight: 700;
+}
+
+.check-badge svg {
+  width: 15px;
+  height: 15px;
+}
+
+.check-badge.is-pass { background: var(--low); }
+.check-badge.is-fail { background: var(--high); }
+.check-badge.is-pending { background: var(--medium-soft); }
+.check-badge.is-skipped { background: var(--surface-2); color: var(--text-3); }
+
+.check-body {
+  min-width: 0;
+}
+
+.check-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-weight: 600;
+}
+
+.check-state {
+  font-size: 12.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.check-state.is-pass { color: var(--low-ink); }
+.check-state.is-fail { color: var(--high-ink); }
+.check-state.is-pending { color: var(--medium-ink); }
+.check-state.is-skipped { color: var(--text-3); }
+
+.check-compare {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 6px 16px;
+  margin: 8px 0 0;
+}
+
+.check-compare dt {
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.check-compare dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.check-detail {
+  margin-top: 6px;
+  color: var(--text-2);
+  font-size: 14px;
+}
+
+.check-rule {
+  margin-top: 4px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+/* ------------------------------------------------ government record form */
+
+.verify-when {
+  margin-left: 8px;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.verify-recorded {
+  margin: 8px 0 12px;
+  color: var(--text-2);
+  font-size: 14px;
+  font-style: italic;
+}
+
+.verify-form {
+  margin-top: 18px;
+}
+
+.verify-form .field {
+  margin: 14px 0;
+}
