@@ -11,12 +11,13 @@ import { recordAudit } from '../audit.js';
 import { requireApplicant, requireStaff } from '../auth/middleware.js';
 import { config } from '../config.js';
 import { query, withTransaction } from '../db.js';
-import { reconcileCycle, scoreApplications } from '../household/service.js';
+import { applicationChecklist, reconcileCycle, scoreApplications } from '../household/service.js';
 import { enqueueDocument } from '../pipeline/queue.js';
 import {
   toApplicationDetail,
   toHouseholdEdge,
   toReviewRecord,
+  toVerificationResult,
   type EdgeRow,
   type FlagRow,
   type FullApplicationRow,
@@ -400,6 +401,115 @@ applicationsRouter.get('/:id/household', requireStaff(), async (req, res) => {
   };
 
   res.json(view);
+});
+
+/* ---------------------------------------------------------- the checklist */
+
+/**
+ * Every check on this application — passed, failed, skipped with its reason, or
+ * pending. Staff only: a pass list tells an applicant what the engine looks at,
+ * which is exactly what a fraudulent one would like to know.
+ */
+applicationsRouter.get('/:id/checks', requireStaff(), async (req, res) => {
+  const parsed = idParam.safeParse(req.params);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'invalid_request', message: 'Bad application id.' });
+    return;
+  }
+
+  const checklist = await applicationChecklist(parsed.data.id);
+  if (!checklist) {
+    res.status(404).json({ error: 'not_found', message: 'No such application.' });
+    return;
+  }
+  res.json(checklist);
+});
+
+/* ------------------------------------------------------ government record */
+
+const verificationSchema = z.object({
+  // manual_check_required is where a result starts, not something to record.
+  status: z.enum(['verified', 'mismatch', 'unavailable']),
+  notes: z.string().trim().max(2000).optional(),
+});
+
+/**
+ * Record what the reviewer found on the state verification portal.
+ *
+ * Appended, never updated: the latest row is the current result and earlier
+ * ones stay as history, the same as decisions. A mismatch must say what did not
+ * match — it moves the application up the queue, so the next reviewer needs to
+ * know why. The cycle is rescored because GOVERNMENT_RECORD_MISMATCH reads this.
+ */
+applicationsRouter.post('/:id/verification', requireStaff(), async (req, res) => {
+  const params = idParam.safeParse(req.params);
+  const body = verificationSchema.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({
+      error: 'invalid_request',
+      message: 'A status of verified, mismatch or unavailable is required.',
+      details: body.success ? undefined : body.error.flatten().fieldErrors,
+    });
+    return;
+  }
+  const { status, notes } = body.data;
+  if (status === 'mismatch' && (!notes || notes.length < 12)) {
+    res.status(400).json({
+      error: 'invalid_request',
+      message: 'Say what did not match (at least 12 characters): it raises this application in the queue.',
+    });
+    return;
+  }
+
+  const reviewerId = req.session!.sub;
+  const recorded = await withTransaction(async (client) => {
+    const { rows } = await client.query<{ cycle: string; manual_check_url: string | null }>(
+      `SELECT a.cycle,
+              (SELECT manual_check_url FROM verification_results v
+                WHERE v.application_id = a.id ORDER BY created_at DESC LIMIT 1) AS manual_check_url
+         FROM applications a WHERE a.id = $1`,
+      [params.data.id],
+    );
+    const application = rows[0];
+    if (!application) return null;
+    if (!application.manual_check_url) return { cycle: application.cycle, noLink: true as const };
+
+    const { rows: inserted } = await client.query<VerificationRow>(
+      `INSERT INTO verification_results
+         (application_id, adapter, status, manual_check_url, checked_by, checked_at, notes)
+       VALUES ($1, 'ManualLinkAdapter', $2, $3, $4, now(), $5)
+       RETURNING id, application_id, adapter, status, manual_check_url, checked_at, notes`,
+      [params.data.id, status, application.manual_check_url, reviewerId, notes ?? null],
+    );
+
+    await recordAudit(
+      {
+        actorId: reviewerId,
+        actorType: 'user',
+        action: 'verification.recorded',
+        entityType: 'application',
+        entityId: params.data.id,
+        detail: { status, notes: notes ?? null },
+      },
+      client,
+    );
+    return { cycle: application.cycle, row: inserted[0]! };
+  });
+
+  if (!recorded) {
+    res.status(404).json({ error: 'not_found', message: 'No such application.' });
+    return;
+  }
+  if ('noLink' in recorded) {
+    res.status(409).json({
+      error: 'not_ready',
+      message: 'This application has no verification link yet — its certificate has not been processed.',
+    });
+    return;
+  }
+
+  await rescoreCycle(recorded.cycle, reviewerId);
+  res.status(201).json(toVerificationResult(recorded.row));
 });
 
 /* ---------------------------------------------------------------- decision */

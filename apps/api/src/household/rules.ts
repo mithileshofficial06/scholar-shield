@@ -11,6 +11,17 @@
  * change queue position only.
  */
 
+import {
+  compareFields,
+  DETAIL_FIELDS,
+  HOLDER_FIELDS,
+  incomeWordsCheck,
+  NUMBER_FIELDS,
+  tamperCheck,
+  type CertificateEvidence,
+  type ComparedField,
+  type ComparisonOptions,
+} from './certificate.js';
 import type { HouseholdComponent } from './components.js';
 
 export type Severity = 'low' | 'medium' | 'high';
@@ -26,6 +37,10 @@ export interface RuleConfig {
   requiresCorroboration?: boolean;
   /** Below this OCR confidence a figure read off a document is not relied on. */
   minOcrConfidence?: number;
+  /** Name parts must agree at least this well to count as the same name. */
+  minNameSimilarity?: number;
+  /** ELA tamper score at or above which a document is flagged. */
+  minTamperScore?: number;
 }
 
 export interface RulesConfig {
@@ -54,6 +69,14 @@ export interface ScorableApplication {
    * document has not been read yet.
    */
   certificateIncome?: { value: number; confidence: number } | null;
+  /** Declared particulars the certificate is compared against. */
+  guardianName?: string | null;
+  district?: string | null;
+  pincode?: string | null;
+  /** Everything the pipeline learned from the uploaded certificate. */
+  certificate?: CertificateEvidence | null;
+  /** The latest government-record result a reviewer recorded. */
+  verificationStatus?: 'manual_check_required' | 'verified' | 'mismatch' | 'unavailable' | null;
 }
 
 export interface RuleFinding {
@@ -529,6 +552,148 @@ export function declaredIncomeBelowCertificate(
   return findings;
 }
 
+// ------------------------------------------- the certificate against the form
+
+function comparisonOptions(config: RuleConfig): ComparisonOptions {
+  return { minOcrConfidence: config.minOcrConfidence ?? 0.8, minNameSimilarity: config.minNameSimilarity ?? 0.25 };
+}
+
+/**
+ * One rule per group of certificate fields, each flagging once per application
+ * with every field in the group that failed. The comparison itself lives in
+ * certificate.ts, shared with the reviewer's checklist.
+ */
+function certificateFieldRule(ruleId: string, fields: readonly ComparedField[], describe: string) {
+  return (applications: readonly ScorableApplication[], config: RuleConfig): RuleFinding[] => {
+    if (!config.enabled) return [];
+    const findings: RuleFinding[] = [];
+
+    for (const app of applications) {
+      if (!app.certificate) continue;
+      const failed = compareFields(fields, app, app.certificate, comparisonOptions(config)).filter(
+        (c) => c.status === 'fail',
+      );
+      if (failed.length === 0) continue;
+
+      findings.push({
+        applicationId: app.id,
+        ruleId,
+        severity: config.severity,
+        weight: config.weight,
+        reason:
+          `${describe} ` +
+          failed.map((c) => `${c.label}: the form says "${c.declared}", the certificate reads "${c.certificate}".`).join(' ') +
+          ' Check the document itself: the certificate side was read by OCR.',
+        evidence: {
+          mismatches: failed.map((c) => ({
+            field: c.field,
+            declared: c.declared,
+            certificate: c.certificate,
+            ocrConfidence: c.confidence,
+          })),
+        },
+      });
+    }
+    return findings;
+  };
+}
+
+/** The certificate names a different applicant or guardian — possibly someone else's certificate. */
+export const certificateHolderMismatch = certificateFieldRule(
+  'CERTIFICATE_HOLDER_MISMATCH',
+  HOLDER_FIELDS,
+  'The certificate appears to be issued to a different person than this application names.',
+);
+
+/** The certificate uploaded is not the one whose number the applicant gave. */
+export const certificateNumberMismatch = certificateFieldRule(
+  'CERTIFICATE_NUMBER_MISMATCH',
+  NUMBER_FIELDS,
+  'The uploaded certificate is not the one whose number the application gives.',
+);
+
+/** District, PIN or family size on the certificate disagree with the form. */
+export const certificateDetailsMismatch = certificateFieldRule(
+  'CERTIFICATE_DETAILS_MISMATCH',
+  DETAIL_FIELDS,
+  'The certificate describes the household differently from the form.',
+);
+
+/** Income in figures and in words disagree on the certificate itself. */
+export function certificateIncomeWordsMismatch(
+  applications: readonly ScorableApplication[],
+  config: RuleConfig,
+): RuleFinding[] {
+  if (!config.enabled) return [];
+  const findings: RuleFinding[] = [];
+  for (const app of applications) {
+    const check = incomeWordsCheck(app.certificate, comparisonOptions(config));
+    if (check.status !== 'fail') continue;
+    findings.push({
+      applicationId: app.id,
+      ruleId: 'CERTIFICATE_INCOME_WORDS_MISMATCH',
+      severity: config.severity,
+      weight: config.weight,
+      reason: check.reason,
+      evidence: { incomeInFigures: check.figure, incomeInWords: check.words },
+    });
+  }
+  return findings;
+}
+
+/**
+ * Error level analysis found an anomalous region, or the metadata names an
+ * editor. Weighted below the high-severity band on purpose (PROJECT_REPORT.md
+ * §5 Tier 2): ELA has a real false-positive rate, so it can raise a document's
+ * place in the queue but never put it in the high band alone.
+ */
+export function documentTamperSignal(
+  applications: readonly ScorableApplication[],
+  config: RuleConfig,
+): RuleFinding[] {
+  if (!config.enabled) return [];
+  const threshold = config.minTamperScore ?? 0.5;
+  const findings: RuleFinding[] = [];
+  for (const app of applications) {
+    const check = tamperCheck(app.certificate, threshold);
+    if (check.status !== 'fail') continue;
+    findings.push({
+      applicationId: app.id,
+      ruleId: 'DOCUMENT_TAMPER_SIGNAL',
+      severity: config.severity,
+      weight: config.weight,
+      reason: check.reason,
+      evidence: { tamperScore: check.tamperScore, threshold, editingSoftware: check.editors },
+    });
+  }
+  return findings;
+}
+
+/**
+ * A reviewer checked the state portal and recorded that the certificate does
+ * not match the government record. The one input here a human has confirmed,
+ * so it carries the most weight of any rule — and it is still a queue
+ * position, not a rejection. The reviewer who recorded it still decides.
+ */
+export function governmentRecordMismatch(
+  applications: readonly ScorableApplication[],
+  config: RuleConfig,
+): RuleFinding[] {
+  if (!config.enabled) return [];
+  return applications
+    .filter((app) => app.verificationStatus === 'mismatch')
+    .map((app) => ({
+      applicationId: app.id,
+      ruleId: 'GOVERNMENT_RECORD_MISMATCH',
+      severity: config.severity,
+      weight: config.weight,
+      reason:
+        'A reviewer checked this certificate on the state verification portal and recorded that it does ' +
+        'not match the government record (not found, or different details).',
+      evidence: { verificationStatus: app.verificationStatus },
+    }));
+}
+
 /**
  * Certificate obtained just before the deadline.
  *
@@ -638,6 +803,12 @@ export function evaluateRules(
       rule('DECLARED_INCOME_BELOW_CERTIFICATE'),
       config.scholarshipIncomeCeiling,
     ),
+    ...certificateIncomeWordsMismatch(applications, rule('CERTIFICATE_INCOME_WORDS_MISMATCH')),
+    ...certificateHolderMismatch(applications, rule('CERTIFICATE_HOLDER_MISMATCH')),
+    ...certificateNumberMismatch(applications, rule('CERTIFICATE_NUMBER_MISMATCH')),
+    ...certificateDetailsMismatch(applications, rule('CERTIFICATE_DETAILS_MISMATCH')),
+    ...documentTamperSignal(applications, rule('DOCUMENT_TAMPER_SIGNAL')),
+    ...governmentRecordMismatch(applications, rule('GOVERNMENT_RECORD_MISMATCH')),
   );
 
   // Corroboration pass: a rule marked requiresCorroboration is dropped unless the

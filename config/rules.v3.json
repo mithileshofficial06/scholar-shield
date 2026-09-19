@@ -1,0 +1,114 @@
+{
+  "version": "v3",
+  "description": "ScholarShield contradiction rule weights. Stamped onto every risk_flags row so a historical score stays reproducible against the config that produced it. Never edit in place after flags exist — add a new version. v3 = v2 plus six checks of the uploaded certificate against its own application and against the government record; no v2 rule changed.",
+  "scholarshipIncomeCeiling": 250000,
+  "highSeverityScoreThreshold": 50,
+  "rules": {
+    "SIBLING_INCOME_CONTRADICTION": {
+      "enabled": true,
+      "severity": "high",
+      "weight": 40,
+      "incomeTolerancePercent": 15,
+      "incomeToleranceAbsolute": 12000,
+      "note": "Both tolerances must be exceeded. Certificates issued months apart legitimately differ a little, and a percentage alone fires on small absolute gaps between low incomes — precisely the applicants least able to contest a flag."
+    },
+    "GUARDIAN_INCOME_CONTRADICTION": {
+      "enabled": true,
+      "severity": "high",
+      "weight": 35,
+      "incomeTolerancePercent": 15,
+      "incomeToleranceAbsolute": 12000,
+      "note": "Same guardian, different households. Catches the case where household resolution failed but the guardian name is identical. Within one household SIBLING_INCOME_CONTRADICTION already covers it, so this rule skips same-household pairs to avoid double-counting."
+    },
+    "ADDRESS_CLUSTER_UNRELATED": {
+      "enabled": true,
+      "severity": "medium",
+      "weight": 20,
+      "minDistinctHouseholds": 3,
+      "note": "Medium, not high. Joint families, tenements, and migrant-labour housing put many genuinely low-income families at one address — the equity cases named in PROJECT_REPORT.md §6."
+    },
+    "ISSUING_OFFICE_MISMATCH": {
+      "enabled": true,
+      "severity": "low",
+      "weight": 8,
+      "note": "Weak on its own. A family that moved between certificate applications legitimately uses two offices."
+    },
+    "DUPLICATE_CERTIFICATE_ID": {
+      "enabled": true,
+      "severity": "high",
+      "weight": 45,
+      "note": "No tolerance needed — a certificate serial number either matches exactly or it doesn't. Highest weight in the set: reuse of one certificate across applications is closer to direct evidence than an inference from declared figures."
+    },
+    "FAMILY_SIZE_CONTRADICTION": {
+      "enabled": true,
+      "severity": "medium",
+      "weight": 18,
+      "note": "Medium, not high. A family size recorded a year apart can genuinely change (a marriage, a death, a sibling moving out); disagreement is a prompt to check the certificates, not proof either one lies."
+    },
+    "SHARED_CONTACT_UNRELATED_HOUSEHOLDS": {
+      "enabled": true,
+      "severity": "medium",
+      "weight": 22,
+      "note": "Medium: a shared landline or a relative's number lent for contact purposes happens legitimately. Weighted above ADDRESS_CLUSTER_UNRELATED because a phone number is harder to share incidentally than a street address."
+    },
+    "DEADLINE_PROXIMITY": {
+      "enabled": true,
+      "severity": "low",
+      "weight": 6,
+      "windowDays": 14,
+      "requiresCorroboration": true,
+      "note": "Never fires alone. Siblings applying in the same admission cycle obtain certificates days apart, which is normal and not evidence of anything. Only contributes once another Tier 1 rule has already fired on the same application."
+    },
+    "DECLARED_INCOME_BELOW_CERTIFICATE": {
+      "enabled": true,
+      "severity": "high",
+      "weight": 45,
+      "incomeTolerancePercent": 15,
+      "incomeToleranceAbsolute": 12000,
+      "minOcrConfidence": 0.8,
+      "note": "The applicant's own certificate, read by OCR, shows materially more than the form declares. Needs no second application, so it covers an applicant filing alone. Only understatement fires: overstating works against the applicant. Weighted with DUPLICATE_CERTIFICATE_ID as the closest thing to direct evidence, but gated on OCR confidence and the same two-part tolerance, because a misread digit on an honest certificate would otherwise land at the top of the queue."
+    },
+    "CERTIFICATE_HOLDER_MISMATCH": {
+      "enabled": true,
+      "severity": "high",
+      "weight": 40,
+      "minOcrConfidence": 0.8,
+      "minNameSimilarity": 0.25,
+      "note": "The certificate names a different applicant or guardian than the form: the signature of someone else's certificate uploaded as one's own. Names are compared with household resolution's matcher plus a vowel-insensitive skeleton; 0.25 sits in the measured gap between the same person spelled differently (0.30+) and different people (0.20-), and a name OCR read below the confidence floor is skipped, never failed."
+    },
+    "CERTIFICATE_NUMBER_MISMATCH": {
+      "enabled": true,
+      "severity": "high",
+      "weight": 30,
+      "minOcrConfidence": 0.8,
+      "note": "The uploaded certificate is not the one whose number the applicant typed — and the typed number is what the manual verification link checks. Exact match after stripping formatting: a serial number cannot be nearly right."
+    },
+    "CERTIFICATE_INCOME_WORDS_MISMATCH": {
+      "enabled": true,
+      "severity": "high",
+      "weight": 30,
+      "minOcrConfidence": 0.8,
+      "note": "The income in figures and in words disagree on the certificate itself. An issuing office prints both from one value; an edit to one line that misses the other is a classic tamper artefact. Both lines must be read above the confidence floor."
+    },
+    "CERTIFICATE_DETAILS_MISMATCH": {
+      "enabled": true,
+      "severity": "medium",
+      "weight": 15,
+      "minOcrConfidence": 0.8,
+      "note": "District, PIN code or family size on the certificate disagree with the form. Medium: a family that moved, or grew, since the certificate was issued produces exactly this legitimately."
+    },
+    "DOCUMENT_TAMPER_SIGNAL": {
+      "enabled": true,
+      "severity": "medium",
+      "weight": 15,
+      "minTamperScore": 0.5,
+      "note": "ELA found a region compressing unlike the rest of the page, or the metadata names an image or PDF editor. Weighted to stay below highSeverityScoreThreshold alone (PROJECT_REPORT.md §5 Tier 2): ELA's false-positive rate on this corpus has not been measured yet, so the threshold is a starting point, not a calibrated one."
+    },
+    "GOVERNMENT_RECORD_MISMATCH": {
+      "enabled": true,
+      "severity": "high",
+      "weight": 50,
+      "note": "A reviewer checked the state portal and recorded that the certificate does not match the government record. The only input a human has confirmed, so the heaviest weight — and still only a queue position; the reviewer decides."
+    }
+  }
+}

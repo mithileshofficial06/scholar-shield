@@ -260,3 +260,41 @@ export interface ApiError {
   message: string;
   details?: unknown;
 }
+
+// ---------------------------------------------------------------- verification checklist
+
+/**
+ * Every check the engine runs on one application, including the ones that
+ * passed. A flag list shows only what fired; a reviewer deciding a case also
+ * needs to know what was checked and came back clean, and what could not be
+ * checked at all — "no flag" and "never looked" are different things.
+ *
+ *   pass    — checked, and it held
+ *   fail    — checked, and it did not (these are the flags)
+ *   skipped — could not be checked, with the reason (nothing to compare, OCR unsure)
+ *   pending — not run yet, or waiting on a person (the government-record check)
+ */
+export type CheckStatus = 'pass' | 'fail' | 'skipped' | 'pending';
+
+export type CheckGroup = 'document' | 'certificate' | 'government' | 'household';
+
+export interface ApplicationCheck {
+  id: string;
+  group: CheckGroup;
+  label: string;
+  status: CheckStatus;
+  detail: string;
+  /** The rule a failure raises, when the check is backed by one. */
+  ruleId: string | null;
+  severity: FlagSeverity | null;
+  /** For certificate-against-form comparisons: both sides, as compared. */
+  declared?: string | null;
+  certificate?: string | null;
+}
+
+export interface ApplicationChecklist {
+  applicationId: string;
+  configVersion: string;
+  summary: Record<CheckStatus, number>;
+  checks: ApplicationCheck[];
+}

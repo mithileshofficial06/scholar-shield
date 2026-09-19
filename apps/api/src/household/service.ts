@@ -16,7 +16,7 @@ import type { RuleFinding } from '../household/rules.js';
 
 import { recordAudit } from '../audit.js';
 import { config } from '../config.js';
-import { query, withTransaction } from '../db.js';
+import { query, withTransaction, type QueryParam } from '../db.js';
 import {
   componentFor,
   detectComponents,
@@ -24,7 +24,11 @@ import {
   type HouseholdComponent,
 } from './components.js';
 import { loadRulesConfig } from './config.js';
-import { normalizeIdentity, normalizeRupees } from './normalize.js';
+import type { ApplicationChecklist } from '@scholarshield/shared';
+
+import { certificateIncomeFrom, type CertificateEvidence } from './certificate.js';
+import { buildChecklist, type ChecklistFlag, type StageRun } from './checklist.js';
+import { normalizeIdentity } from './normalize.js';
 import { linkedPairs, type MatchField, type ResolutionInput } from './resolve.js';
 import { evaluateRules, type ScorableApplication } from './rules.js';
 
@@ -47,38 +51,65 @@ interface ApplicationRow {
   normalized_guardian_name: string | null;
   normalized_address: string | null;
   normalized_phone: string | null;
-  /** The OCR'd `annual_income` field of the latest document that has one. */
-  certificate_income: { value?: string; confidence?: number } | null;
+  pincode: string | null;
+  /** The latest document that OCR has read, and what the pipeline learned from it. */
+  certificate_fields: Record<string, { value: string | null; confidence: number } | undefined> | null;
+  ocr_report: { incomeWordsMismatch?: boolean | null } | null;
+  tamper_score: string | null;
+  forensics: { elaApplied?: boolean; encoding?: { softwareTags?: string[] } } | null;
+  verification_status: ScorableApplication['verificationStatus'];
 }
 
 async function applicationsInCycle(cycle: string): Promise<ApplicationRow[]> {
-  // Latest document only: a re-upload replaces what the applicant is standing
-  // behind, and an older certificate's figure is not a claim they still make.
+  return selectApplications('a.cycle = $1', [cycle]);
+}
+
+/**
+ * The one query that turns applications into what the rules read. Scoring and
+ * the reviewer's checklist both go through it, so the checklist sees exactly
+ * the inputs the score was computed from.
+ */
+async function selectApplications(where: string, params: QueryParam[]): Promise<ApplicationRow[]> {
+  // Latest read document only: a re-upload replaces what the applicant is
+  // standing behind, and an older certificate is not a claim they still make.
   const { rows } = await query<ApplicationRow>(
     `SELECT a.id, a.cycle, a.applicant_name, a.guardian_name, a.guardian_phone, a.address_line,
-            a.district, a.declared_annual_income, a.declared_family_size, a.certificate_id,
+            a.district, a.pincode, a.declared_annual_income, a.declared_family_size, a.certificate_id,
             a.issuing_office, a.certificate_issue_date,
             a.normalized_applicant_name, a.normalized_guardian_name,
             a.normalized_address, a.normalized_phone,
-            d.certificate_income
+            d.extracted_fields AS certificate_fields, d.ocr_report, d.tamper_score, d.forensics,
+            v.status AS verification_status
        FROM applications a
        LEFT JOIN LATERAL (
-         SELECT extracted_fields -> 'annual_income' AS certificate_income
+         SELECT extracted_fields, ocr_report, tamper_score, forensics
            FROM documents
-          WHERE application_id = a.id AND extracted_fields ? 'annual_income'
+          WHERE application_id = a.id AND extracted_fields IS NOT NULL AND purged_at IS NULL
           ORDER BY created_at DESC
           LIMIT 1
        ) d ON true
-      WHERE a.cycle = $1`,
-    [cycle],
+       LEFT JOIN LATERAL (
+         SELECT status FROM verification_results
+          WHERE application_id = a.id
+          ORDER BY created_at DESC
+          LIMIT 1
+       ) v ON true
+      WHERE ${where}`,
+    params,
   );
   return rows;
 }
 
-function toCertificateIncome(field: ApplicationRow['certificate_income']): ScorableApplication['certificateIncome'] {
-  const value = normalizeRupees(field?.value);
-  if (value === null || typeof field?.confidence !== 'number') return null;
-  return { value, confidence: field.confidence };
+/** Null until OCR has read a document; forensics may still be pending then. */
+function toCertificateEvidence(row: ApplicationRow): CertificateEvidence | null {
+  if (!row.certificate_fields) return null;
+  return {
+    fields: row.certificate_fields,
+    incomeWordsMismatch: row.ocr_report?.incomeWordsMismatch ?? null,
+    tamperScore: row.tamper_score === null ? null : Number(row.tamper_score),
+    elaApplied: row.forensics ? (row.forensics.elaApplied ?? true) : null,
+    softwareTags: row.forensics?.encoding?.softwareTags ?? [],
+  };
 }
 
 /** Fill in normalized columns for any application that lacks them. */
@@ -140,6 +171,7 @@ function toResolutionInput(row: ApplicationRow): ResolutionInput {
 }
 
 function toScorable(row: ApplicationRow): ScorableApplication {
+  const certificate = toCertificateEvidence(row);
   return {
     id: row.id,
     cycle: row.cycle,
@@ -152,7 +184,12 @@ function toScorable(row: ApplicationRow): ScorableApplication {
     issuingOffice: row.issuing_office,
     certificateIssueDate: row.certificate_issue_date,
     certificateId: row.certificate_id,
-    certificateIncome: toCertificateIncome(row.certificate_income),
+    guardianName: row.guardian_name,
+    district: row.district,
+    pincode: row.pincode,
+    certificate,
+    certificateIncome: certificateIncomeFrom(certificate),
+    verificationStatus: row.verification_status,
   };
 }
 
@@ -423,4 +460,57 @@ export async function scoreApplications(
   });
 
   return { scored, flagsWritten };
+}
+
+// ------------------------------------------------------- reviewer checklist
+
+/** Every check on one application, passed or not. Null for an unknown id. */
+export async function applicationChecklist(applicationId: string): Promise<ApplicationChecklist | null> {
+  const rows = await ensureNormalized(await selectApplications('a.id = $1', [applicationId]));
+  const row = rows[0];
+  if (!row) return null;
+
+  const [documents, flags, meta] = await Promise.all([
+    query<{ id: string; ocr_report: { pageConfidence?: number } | null }>(
+      `SELECT id, ocr_report FROM documents WHERE application_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [applicationId],
+    ),
+    query<{ rule_id: string; rule_config_version: string; severity: ChecklistFlag['severity']; reason: string }>(
+      `SELECT rule_id, rule_config_version, severity, reason FROM risk_flags WHERE application_id = $1`,
+      [applicationId],
+    ),
+    query<{ scored_at: Date | null; member_count: number | null; manual_check_url: string | null }>(
+      `SELECT a.scored_at, h.member_count,
+              (SELECT manual_check_url FROM verification_results v
+                WHERE v.application_id = a.id ORDER BY created_at DESC LIMIT 1) AS manual_check_url
+         FROM applications a LEFT JOIN households h ON h.id = a.household_id
+        WHERE a.id = $1`,
+      [applicationId],
+    ),
+  ]);
+
+  const document = documents.rows[0];
+  const stages = document
+    ? await query<{ stage: string; status: StageRun['status']; last_error: string | null }>(
+        `SELECT stage, status, last_error FROM pipeline_stage_runs WHERE document_id = $1`,
+        [document.id],
+      )
+    : { rows: [] };
+
+  return buildChecklist({
+    application: toScorable(row),
+    hasDocument: Boolean(document),
+    pageConfidence: document?.ocr_report?.pageConfidence ?? null,
+    stages: stages.rows.map((s) => ({ stage: s.stage, status: s.status, lastError: s.last_error })),
+    flags: flags.rows.map((f) => ({
+      ruleId: f.rule_id,
+      ruleConfigVersion: f.rule_config_version,
+      severity: f.severity,
+      reason: f.reason,
+    })),
+    householdSize: meta.rows[0]?.member_count ?? 1,
+    scored: Boolean(meta.rows[0]?.scored_at),
+    manualCheckUrl: meta.rows[0]?.manual_check_url ?? null,
+    config: loadRulesConfig(),
+  });
 }
