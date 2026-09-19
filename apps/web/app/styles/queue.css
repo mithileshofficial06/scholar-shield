@@ -291,3 +291,105 @@
     animation: none;
   }
 }
+
+/* ------------------------------------------------------------- status */
+
+.queue-table .flags-cell {
+  white-space: nowrap;
+}
+
+.status-tag {
+  display: inline-block;
+  padding: 3px 10px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.status-tag.is-open { background: var(--surface); }
+.status-tag.is-escalated { background: var(--medium-soft); }
+.status-tag.is-approved { background: var(--low-soft); }
+.status-tag.is-rejected { background: var(--high-soft); }
+.status-tag.is-muted { background: var(--surface-2); color: var(--text-3); }
+
+/*
+ * Phones: each row becomes a card. The table used to keep its 860px minimum
+ * and scroll sideways inside its card, which on a phone showed rank, score
+ * and severity and hid the one thing a reviewer needs — whose application.
+ */
+@media (max-width: 760px) {
+  /* Blocks, not a table: rows sized by table columns ran off the card. */
+  .queue-table,
+  .queue-table tbody {
+    display: block;
+    min-width: 0;
+  }
+
+  .queue-table thead {
+    display: none;
+  }
+
+  .queue-table tbody tr {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 14px 16px;
+    border-bottom: 2px solid var(--ink);
+  }
+
+  .queue-table tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .queue-table td {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .queue-table td.applicant-cell,
+  .queue-table td.signal-cell,
+  .queue-table td.status-cell,
+  .queue-table td.flags-cell,
+  .queue-table td.filed {
+    grid-column: 1 / -1;
+  }
+
+  /* The desktop score cell keeps a 130px minimum the shrunk column cannot give. */
+  .queue-table .score {
+    min-width: 0;
+  }
+
+  .queue-table td.applicant-cell .applicant {
+    font-size: 17px;
+  }
+
+  .queue-table td.status-cell,
+  .queue-table td.flags-cell,
+  .queue-table td.filed {
+    grid-column: auto;
+  }
+
+  .queue-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 2px;
+    color: var(--text-3);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .queue-table td.signal-cell .signal {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    white-space: normal;
+  }
+}

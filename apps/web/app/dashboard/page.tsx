@@ -43,14 +43,15 @@ export default async function DashboardPage({
 
   // Facets are only fetched for a live session; without one the page is a
   // sign-in prompt and these would be three more 401s.
-  const [rules, districts, cycles] =
+  const [rules, districts, cycles, rulesConfig] =
     queue.kind === 'ok'
       ? await Promise.all([
           apiGet<{ items: { ruleId: string; count: number }[] }>('/queue/rules'),
           apiGet<{ items: string[] }>('/queue/districts'),
           apiGet<{ items: CycleSummary[] }>('/admin/cycles'),
+          apiGet<{ version: string }>('/admin/rules'),
         ])
-      : [null, null, null];
+      : [null, null, null, null];
 
   const items = queue.kind === 'ok' ? queue.data.items : [];
   const total = queue.kind === 'ok' ? queue.data.total : 0;
@@ -64,7 +65,8 @@ export default async function DashboardPage({
     { label: 'Matching the filter', value: live ? String(total) : '—', tone: live ? '' : 'muted' },
     { label: 'High severity', value: live ? String(highCount) : '—', tone: live ? 'sev-high' : 'muted' },
     { label: 'Carrying flags', value: live ? String(flaggedCount) : '—', tone: live ? 'sev-medium' : 'muted' },
-    { label: 'Rule config', value: 'v2', tone: 'is-brand' },
+    // Read from the API, not written here: it went stale at every version bump.
+    { label: 'Rule config', value: rulesConfig?.kind === 'ok' ? rulesConfig.data.version : '—', tone: 'is-brand' },
   ];
 
   return (
