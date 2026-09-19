@@ -533,3 +533,40 @@
   background: var(--paper);
   font-size: 15px;
 }
+
+.dropzone.is-invalid {
+  background: var(--high-soft);
+}
+
+/*
+ * Phones: the sidebar dissolves into the page. Progress becomes a compact bar
+ * above the form — the full step list used to fill the first screen before a
+ * single field — and the notes move below the form they annotate.
+ */
+@media (max-width: 760px) {
+  .apply-aside {
+    display: contents;
+  }
+
+  .apply-layout {
+    gap: 20px;
+  }
+
+  .progress-card {
+    order: 0;
+    padding: 14px 16px;
+  }
+
+  .progress-card .step-list {
+    display: none;
+  }
+
+  .apply-main {
+    order: 1;
+    min-width: 0;
+  }
+
+  .note-card {
+    order: 2;
+  }
+}

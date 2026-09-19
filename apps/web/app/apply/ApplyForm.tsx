@@ -112,7 +112,7 @@ export function ApplyForm({ existing }: { existing: ApplicantApplicationView[] }
       sectionRefs.current.map((fieldset) => {
         if (!fieldset) return false;
         const fields = Array.from(fieldset.querySelectorAll<HTMLInputElement>('input'));
-        const required = fields.filter((f) => f.required);
+        const required = fields.filter((f) => f.required || f.dataset.required === 'true');
         const pool = required.length > 0 ? required : fields;
         return required.length > 0 ? pool.every((f) => f.value.trim() !== '') : pool.some((f) => f.value.trim() !== '');
       }),
@@ -165,10 +165,20 @@ export function ApplyForm({ existing }: { existing: ApplicantApplicationView[] }
     setAlreadyApplied(false);
 
     const data = new FormData(event.currentTarget);
-    // An empty file input still submits a zero-byte part, which the API would
-    // sniff, fail to recognise, and refuse as an unsupported type.
+    // An empty file input still submits a zero-byte part. The API accepts an
+    // application without a certificate (a spreadsheet import has none), but an
+    // applicant's must carry one: every document check reads it.
     const file = data.get('certificate');
-    if (file instanceof File && file.size === 0) data.delete('certificate');
+    if (!(file instanceof File) || file.size === 0) {
+      setFieldErrors({ certificate: ['Upload your income certificate. The document checks cannot run without it.'] });
+      setError('Some fields need attention — see the messages below each one.');
+      setBusy(false);
+      // Straight to the drop zone: the banner is sections away from the problem.
+      requestAnimationFrame(() =>
+        document.getElementById('certificate-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+      );
+      return;
+    }
 
     let res: Response;
     try {
@@ -281,7 +291,7 @@ export function ApplyForm({ existing }: { existing: ApplicantApplicationView[] }
             </div>
           </aside>
 
-          <div>
+          <div className="apply-main">
             {submitted ? (
               <div className="card success-card">
                 <span className="success-icon">
@@ -446,24 +456,51 @@ export function ApplyForm({ existing }: { existing: ApplicantApplicationView[] }
                       <Field id="certificateIssueDate" label="Issue date" type="date" />
 
                       <div className="field is-wide">
-                        <span className="field-label">Income certificate</span>
-                        <label className={`dropzone${fileName ? ' has-file' : ''}`} htmlFor="certificate">
+                        <span className="field-label">
+                          Income certificate<span className="field-required" aria-hidden="true"> *</span>
+                        </span>
+                        <label
+                          className={`dropzone${fileName ? ' has-file' : ''}${fieldErrors.certificate ? ' is-invalid' : ''}`}
+                          htmlFor="certificate"
+                        >
                           <span className="dropzone-icon">{fileName ? <CheckIcon /> : <UploadIcon />}</span>
                           <span>
                             <span className="dropzone-title">{fileName ?? 'Choose a PDF or image'}</span>
                             <span className="dropzone-hint">
-                              {fileName ? 'Click to replace' : 'Synthetic documents only · up to 12 MB'}
+                              {fileName ? 'Click to replace' : 'JPEG, PNG, WebP or PDF · up to 12 MB · synthetic documents only'}
                             </span>
                           </span>
+                          {/*
+                            Required, but checked in onSubmit rather than with the
+                            `required` attribute: the input is visually hidden behind
+                            the drop zone, and the browser's own "please select a
+                            file" bubble would point at a 1px element.
+                          */}
                           <input
                             id="certificate"
                             name="certificate"
                             type="file"
                             accept=".pdf,image/*"
                             className="visually-hidden"
-                            onChange={(event) => setFileName(event.target.files?.[0]?.name ?? null)}
+                            data-required="true"
+                            aria-invalid={fieldErrors.certificate ? true : undefined}
+                            aria-describedby={fieldErrors.certificate ? 'certificate-error' : undefined}
+                            onChange={(event) => {
+                              setFileName(event.target.files?.[0]?.name ?? null);
+                              setFieldErrors(({ certificate: _cleared, ...rest }) => rest);
+                            }}
                           />
                         </label>
+                        {fieldErrors.certificate ? (
+                          <span className="field-error" id="certificate-error">
+                            {fieldErrors.certificate[0]}
+                          </span>
+                        ) : (
+                          <span className="field-hint">
+                            Every document check — whose certificate it is, the income on it, the government
+                            record — reads this file.
+                          </span>
+                        )}
                       </div>
                     </div>
                   </fieldset>
