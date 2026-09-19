@@ -690,13 +690,41 @@ code,
   }
 }
 
+/*
+ * Narrow screens: the nav gets a row of its own and wraps. Scrolling it
+ * sideways with the scrollbar hidden hid the last links — "Check my
+ * application" among them — with nothing to say they were there.
+ */
+@media (max-width: 760px) {
+  .site-header-inner {
+    flex-wrap: wrap;
+    height: auto;
+    row-gap: 8px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .site-header-inner > .nav {
+    order: 3;
+    flex-basis: 100%;
+    flex-wrap: wrap;
+    overflow: visible;
+    margin-left: 0;
+    padding: 0;
+  }
+
+  .site-header-inner > :last-child {
+    margin-left: auto;
+  }
+
+  .site-header .btn {
+    width: auto;
+  }
+}
+
 @media (max-width: 560px) {
   .site-header-inner {
     gap: 10px;
-  }
-
-  .brand-name {
-    display: none;
   }
 
   .nav-link {

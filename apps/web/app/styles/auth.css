@@ -245,3 +245,9 @@
   text-decoration-thickness: 2px;
   text-underline-offset: 3px;
 }
+
+.not-found-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}

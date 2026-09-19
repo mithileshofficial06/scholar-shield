@@ -11,6 +11,7 @@ import './styles/pages.css';
 import './styles/queue.css';
 import './styles/auth.css';
 import './styles/detail.css';
+import './styles/admin.css';
 
 /**
  * Self-hosted at build time by next/font — no runtime request to Google, no
