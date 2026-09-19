@@ -26,7 +26,7 @@ import pytesseract
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
 
-from . import forensics, ocr
+from . import forensics, ocr, pdf
 from .config import get_settings
 from .models import AnalyzeResponse, ExtractionReport, ForensicsReport, HealthResponse
 
@@ -77,6 +77,27 @@ def _load_image(raw: bytes) -> Image.Image:
     return image
 
 
+def _page_image(raw: bytes) -> Image.Image:
+    """What OCR reads: the image itself, or the first page of a PDF rendered."""
+    if pdf.is_pdf(raw):
+        return _read_pdf(raw).page
+    return _load_image(raw)
+
+
+def _read_pdf(raw: bytes) -> pdf.PdfContent:
+    try:
+        return pdf.read(raw)
+    except pdf.PdfError as exc:
+        raise HTTPException(status_code=415, detail=str(exc))
+
+
+def _forensics(raw: bytes) -> ForensicsReport:
+    settings = get_settings()
+    if pdf.is_pdf(raw):
+        return forensics.analyze_pdf(_read_pdf(raw), settings)
+    return forensics.analyze(_load_image(raw), raw, settings)
+
+
 async def _read_upload(upload: UploadFile) -> bytes:
     settings = get_settings()
     raw = await upload.read()
@@ -118,15 +139,13 @@ async def extract(file: UploadFile = File(...)) -> ExtractionReport:
     """Field extraction only. Separate from /forensics so the API's pipeline can
     retry one stage without paying for the other."""
     raw = await _read_upload(file)
-    image = _load_image(raw)
-    return ocr.analyze(image, get_settings())
+    return ocr.analyze(_page_image(raw), get_settings())
 
 
 @app.post("/forensics", response_model=ForensicsReport)
 async def analyze_forensics(file: UploadFile = File(...)) -> ForensicsReport:
     raw = await _read_upload(file)
-    image = _load_image(raw)
-    return forensics.analyze(image, raw, get_settings())
+    return _forensics(raw)
 
 
 @app.post("/analyze", response_model=AnalyzeResponse)
@@ -140,12 +159,10 @@ async def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
     that file is gone.
     """
     raw = await _read_upload(file)
-    image = _load_image(raw)
-    settings = get_settings()
 
     return AnalyzeResponse(
         sha256=hashlib.sha256(raw).hexdigest(),
         byte_size=len(raw),
-        extraction=ocr.analyze(image, settings),
-        forensics=forensics.analyze(image, raw, settings),
+        extraction=ocr.analyze(_page_image(raw), get_settings()),
+        forensics=_forensics(raw),
     )

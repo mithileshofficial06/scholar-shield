@@ -12,6 +12,9 @@ python-multipart==0.0.20
 pytesseract==0.3.13
 pillow==11.1.0
 numpy==2.2.1
+# PDF uploads: renders a page to an image, and reads the embedded scan and the
+# document metadata. A self-contained wheel — no poppler or ghostscript to install.
+pypdfium2==4.30.0
 
 # Dev / test
 pytest==8.3.4

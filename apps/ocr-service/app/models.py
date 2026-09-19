@@ -101,6 +101,10 @@ class ForensicsReport(BaseModel):
     baseline_energy: float
     baseline_deviation: float
     notes: list[str] = Field(default_factory=list)
+    # False when error level analysis could not run at all (a lossless format, a
+    # vector PDF, too little print). A tamper_score of 0 is then "not measured",
+    # not "clean" — and the two must not look the same to a reviewer.
+    ela_applied: bool = True
 
 
 class AnalyzeResponse(BaseModel):

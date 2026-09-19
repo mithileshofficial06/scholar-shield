@@ -70,6 +70,8 @@ export interface ForensicsPayload {
   baselineEnergy: number;
   baselineDeviation: number;
   notes: string[];
+  /** False when ELA could not run (lossless image, vector PDF, too little print). */
+  elaApplied: boolean;
 }
 
 export interface AnalyzePayload {
@@ -111,6 +113,7 @@ interface RawForensics {
   baseline_energy: number;
   baseline_deviation: number;
   notes: string[];
+  ela_applied?: boolean;
 }
 
 function toBox(box: number[] | null): [number, number, number, number] | null {
@@ -156,6 +159,8 @@ function toForensics(raw: RawForensics): ForensicsPayload {
     baselineEnergy: raw.baseline_energy,
     baselineDeviation: raw.baseline_deviation,
     notes: raw.notes ?? [],
+    // Absent from a service older than this field; every report it produced ran ELA or said otherwise in notes.
+    elaApplied: raw.ela_applied ?? true,
   };
 }
 

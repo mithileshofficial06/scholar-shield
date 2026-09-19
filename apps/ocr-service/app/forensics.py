@@ -51,6 +51,7 @@ from PIL import Image
 
 from .config import Settings
 from .models import ElaRegion, EncodingReport, ForensicsReport
+from .pdf import PdfContent
 
 # Blocks below this mean gradient carry no ink worth scoring. In 0-255 units of
 # local contrast, chosen so flat paper and rotation fill are excluded while the
@@ -187,6 +188,7 @@ def analyze(image: Image.Image, raw: bytes, settings: Settings) -> ForensicsRepo
             "does not apply and no tamper score was computed."
         )
         return ForensicsReport(
+            ela_applied=False,
             tamper_score=0.0,
             regions=[],
             encoding=encoding,
@@ -208,6 +210,7 @@ def analyze(image: Image.Image, raw: bytes, settings: Settings) -> ForensicsRepo
             f"({inked_count} inked blocks); no tamper score was computed."
         )
         return ForensicsReport(
+            ela_applied=False,
             tamper_score=0.0,
             regions=[],
             encoding=encoding,
@@ -229,6 +232,7 @@ def analyze(image: Image.Image, raw: bytes, settings: Settings) -> ForensicsRepo
             "anomaly is distinguishable."
         )
         return ForensicsReport(
+            ela_applied=False,
             tamper_score=0.0,
             regions=[],
             encoding=encoding,
@@ -281,3 +285,36 @@ def analyze(image: Image.Image, raw: bytes, settings: Settings) -> ForensicsRepo
         baseline_deviation=round(deviation, 4),
         notes=notes,
     )
+
+
+def analyze_pdf(content: PdfContent, settings: Settings) -> ForensicsReport:
+    """
+    Forensics for a PDF upload. See pdf.py for why ELA runs on the embedded scan
+    and on nothing else. Region boxes are in the scan's own pixel coordinates.
+    """
+    if content.scan_jpeg is not None:
+        scan = Image.open(io.BytesIO(content.scan_jpeg))
+        scan.load()
+        report = analyze(scan, content.scan_jpeg, settings)
+        report.notes.insert(0, "Analysed the scanned JPEG embedded in the PDF.")
+    else:
+        report = ForensicsReport(
+            ela_applied=False,
+            tamper_score=0.0,
+            regions=[],
+            encoding=EncodingReport(format="PDF", width=content.page.width, height=content.page.height),
+            baseline_energy=0.0,
+            baseline_deviation=0.0,
+            notes=[
+                "The PDF page is not a single embedded JPEG scan (it is vector text, or "
+                "several images), so error level analysis does not apply and no tamper "
+                "score was computed."
+            ],
+        )
+
+    written_by = [tag for tag in (content.producer, content.creator) if tag]
+    if written_by:
+        report.encoding.software_tags.extend(written_by)
+        report.notes.append("PDF written by: " + ", ".join(written_by))
+    report.notes.extend(content.notes)
+    return report
