@@ -53,6 +53,7 @@ export async function POST(request: Request) {
   const result = (await upstream.json().catch(() => ({}))) as {
     token?: string;
     role?: string;
+    expiresInHours?: number;
     message?: string;
     error?: string;
   };
@@ -66,12 +67,16 @@ export async function POST(request: Request) {
 
   const role = mode === 'applicant' ? 'applicant' : (result.role ?? 'reviewer');
   const jar = await cookies();
+  // The cookie lives exactly as long as the token inside it. Shorter, and a
+  // refresh signs out someone whose token is still good; longer, and the page
+  // keeps sending a dead token and reads as signed in when it is not.
+  const hours = typeof result.expiresInHours === 'number' && result.expiresInHours > 0 ? result.expiresInHours : 12;
   const options = {
     httpOnly: true,
     sameSite: 'lax' as const,
     secure: isProduction,
     path: '/',
-    maxAge: 12 * 60 * 60,
+    maxAge: hours * 60 * 60,
   };
 
   jar.set(SESSION_COOKIE, result.token, options);
