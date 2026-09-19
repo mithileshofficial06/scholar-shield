@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   compareField,
+  editingSoftwareCheck,
+  elaCheck,
   incomeWordsCheck,
-  tamperCheck,
   type CertificateEvidence,
 } from '../src/household/certificate.js';
 import { buildChecklist, type ChecklistInput } from '../src/household/checklist.js';
@@ -145,6 +146,24 @@ describe('certificate against the form', () => {
     expect(fired([blurred])).not.toContain('CERTIFICATE_HOLDER_MISMATCH');
   });
 
+  // Cases found in the seeded data, each once a false flag on an honest certificate.
+  it('matches a name carrying the same initial on both sides', () => {
+    const initial = app({ guardianName: 'V. Ramachandran' });
+    expect(compareField('guardian_name', initial, evidence({}, { guardian_name: read('V. Ramachandran') })).status).toBe('pass');
+  });
+
+  it('tolerates an OCR misread in a district name', () => {
+    const misread = app({ district: 'Madurai' });
+    expect(compareField('district', misread, evidence({}, { district: read('Maduraj') })).status).toBe('pass');
+    expect(compareField('district', misread, evidence({}, { district: read('Coimbatore') })).status).toBe('fail');
+  });
+
+  it('compares a PIN by postal sorting district, not by post office', () => {
+    const pin = app({ pincode: '620001' });
+    expect(compareField('pincode', pin, evidence({}, { pincode: read('620004') })).status).toBe('pass');
+    expect(compareField('pincode', pin, evidence({}, { pincode: read('641012') })).status).toBe('fail');
+  });
+
   it('skips a field the applicant did not declare', () => {
     expect(compareField('pincode', app({ pincode: null }), evidence()).status).toBe('skipped');
   });
@@ -162,22 +181,29 @@ describe('income in figures against words', () => {
 });
 
 describe('tamper signal', () => {
-  it('flags an anomalous region at or above the threshold', () => {
-    expect(fired([app({ certificate: evidence({ tamperScore: 0.7 }) })])).toContain('DOCUMENT_TAMPER_SIGNAL');
-  });
-
-  it('flags an editor named in the metadata even with a clean ELA score', () => {
-    const check = tamperCheck(evidence({ softwareTags: ['Adobe Photoshop 25.0'] }), 0.5);
-    expect(check.status).toBe('fail');
-    expect(check.editors).toEqual(['Adobe Photoshop 25.0']);
+  it('flags an editor named in the metadata', () => {
+    const photoshopped = app({ certificate: evidence({ softwareTags: ['Adobe Photoshop 25.0'] }) });
+    expect(fired([photoshopped])).toContain('DOCUMENT_TAMPER_SIGNAL');
+    expect(editingSoftwareCheck(photoshopped.certificate).editors).toEqual(['Adobe Photoshop 25.0']);
   });
 
   it('does not treat a PDF writer applicants routinely use as an editor', () => {
-    expect(tamperCheck(evidence({ softwareTags: ['Adobe Acrobat Pro', 'iLovePDF'] }), 0.5).status).toBe('pass');
+    expect(editingSoftwareCheck(evidence({ softwareTags: ['Adobe Acrobat Pro', 'iLovePDF'] })).status).toBe('pass');
+  });
+
+  it('does not score ELA in v3, however high — it measured at chance on the corpus', () => {
+    expect(config.rules.DOCUMENT_TAMPER_SIGNAL!.minTamperScore).toBeUndefined();
+    expect(fired([app({ certificate: evidence({ tamperScore: 1 }) })])).not.toContain('DOCUMENT_TAMPER_SIGNAL');
+    expect(elaCheck(evidence({ tamperScore: 1 }), null).status).toBe('skipped');
+  });
+
+  it('scores ELA against a threshold when a config sets one', () => {
+    expect(elaCheck(evidence({ tamperScore: 0.7 }), 0.5).status).toBe('fail');
+    expect(elaCheck(evidence({ tamperScore: 0.3 }), 0.5).status).toBe('pass');
   });
 
   it('reports "not measured" rather than "clean" when ELA could not run', () => {
-    expect(tamperCheck(evidence({ elaApplied: false, tamperScore: 0 }), 0.5).status).toBe('skipped');
+    expect(elaCheck(evidence({ elaApplied: false, tamperScore: 0 }), 0.5).status).toBe('skipped');
   });
 });
 
@@ -217,13 +243,14 @@ describe('reviewer checklist', () => {
     expect(list.summary.fail).toBe(0);
     expect(list.checks.length).toBeGreaterThanOrEqual(20);
     expect(statusOf(list, 'certificate.applicant_name')).toBe('pass');
-    expect(statusOf(list, 'document.tamper')).toBe('pass');
+    expect(statusOf(list, 'document.metadata')).toBe('pass');
+    expect(statusOf(list, 'document.ela')).toBe('skipped');
   });
 
   it('never disagrees with the flags about the same application', () => {
     const cases = [
       app(),
-      app({ certificate: evidence({ tamperScore: 0.9, incomeWordsMismatch: true }, { applicant_name: read('Someone Else') }) }),
+      app({ certificate: evidence({ softwareTags: ['GIMP 2.10'], incomeWordsMismatch: true }, { applicant_name: read('Someone Else') }) }),
       app({ declaredAnnualIncome: 90_000, certificateIncome: { value: 480_000, confidence: 0.93 } }),
       app({ verificationStatus: 'mismatch' }),
     ];
@@ -251,7 +278,7 @@ describe('reviewer checklist', () => {
   it('marks every document check skipped when no certificate was uploaded', () => {
     const list = checklistFor(app({ certificate: null }), { stages: [] });
     expect(statusOf(list, 'document.uploaded')).toBe('fail');
-    for (const id of ['certificate.applicant_name', 'certificate.income', 'document.tamper']) {
+    for (const id of ['certificate.applicant_name', 'certificate.income', 'document.metadata', 'document.ela']) {
       expect(statusOf(list, id)).toBe('skipped');
     }
   });

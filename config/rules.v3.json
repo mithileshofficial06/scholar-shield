@@ -74,21 +74,21 @@
       "weight": 40,
       "minOcrConfidence": 0.8,
       "minNameSimilarity": 0.25,
-      "note": "The certificate names a different applicant or guardian than the form: the signature of someone else's certificate uploaded as one's own. Names are compared with household resolution's matcher plus a vowel-insensitive skeleton; 0.25 sits in the measured gap between the same person spelled differently (0.30+) and different people (0.20-), and a name OCR read below the confidence floor is skipped, never failed."
+      "note": "The certificate names a different applicant or guardian than the form: the signature of someone else's certificate uploaded as one's own. Names are compared with household resolution's matcher plus a vowel-insensitive skeleton; 0.25 sits in the measured gap between the same person spelled differently (0.30+) and different people (0.20-), and a name OCR read below the confidence floor is skipped, never failed. Measured on the synthetic corpus with honest forms: 0 false fails on 65 untampered certificates."
     },
     "CERTIFICATE_NUMBER_MISMATCH": {
       "enabled": true,
       "severity": "high",
       "weight": 30,
       "minOcrConfidence": 0.8,
-      "note": "The uploaded certificate is not the one whose number the applicant typed — and the typed number is what the manual verification link checks. Exact match after stripping formatting: a serial number cannot be nearly right."
+      "note": "The uploaded certificate is not the one whose number the applicant typed — and the typed number is what the manual verification link checks. Exact match after stripping formatting: a serial number cannot be nearly right. OCR reads the certificate number least reliably of any field: on the corpus it cleared the confidence floor on 44 of 65 documents, so this check is skipped on about a third."
     },
     "CERTIFICATE_INCOME_WORDS_MISMATCH": {
       "enabled": true,
       "severity": "high",
       "weight": 30,
       "minOcrConfidence": 0.8,
-      "note": "The income in figures and in words disagree on the certificate itself. An issuing office prints both from one value; an edit to one line that misses the other is a classic tamper artefact. Both lines must be read above the confidence floor."
+      "note": "The income in figures and in words disagree on the certificate itself — an edit to one line that missed the other. Both lines must be read at 0.8 confidence or better. Measured on the synthetic corpus: 0 false fails on 65 untampered certificates. Its catch rate is unmeasured: the corpus forger repaints both lines consistently, which this check cannot see by design."
     },
     "CERTIFICATE_DETAILS_MISMATCH": {
       "enabled": true,
@@ -101,8 +101,7 @@
       "enabled": true,
       "severity": "medium",
       "weight": 15,
-      "minTamperScore": 0.5,
-      "note": "ELA found a region compressing unlike the rest of the page, or the metadata names an image or PDF editor. Weighted to stay below highSeverityScoreThreshold alone (PROJECT_REPORT.md §5 Tier 2): ELA's false-positive rate on this corpus has not been measured yet, so the threshold is a starting point, not a calibrated one."
+      "note": "The file's metadata names an image or PDF editor. Error level analysis is NOT scored: no minTamperScore is set, because on the synthetic corpus ELA separated 22 tampered certificates from their matched controls no better than chance (AUC 0.50) and at 0.5 flagged 9 of 43 genuine ones while catching 1 tampered. Set minTamperScore in a later version only once it is shown to work. Weighted below highSeverityScoreThreshold either way (PROJECT_REPORT.md §5 Tier 2)."
     },
     "GOVERNMENT_RECORD_MISMATCH": {
       "enabled": true,

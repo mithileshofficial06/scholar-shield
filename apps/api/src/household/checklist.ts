@@ -15,8 +15,9 @@ import type { ApplicationCheck, ApplicationChecklist, CheckStatus } from '@schol
 
 import {
   compareField,
+  editingSoftwareCheck,
+  elaCheck,
   incomeWordsCheck,
-  tamperCheck,
   type ComparedField,
   type ComparisonOptions,
 } from './certificate.js';
@@ -240,25 +241,30 @@ export function buildChecklist(input: ChecklistInput): ApplicationChecklist {
     }
   }
 
-  // Forensics.
+  // Forensics: the metadata, and error level analysis.
   {
     const ruleId = 'DOCUMENT_TAMPER_SIGNAL';
     const rule = ruleConfig(config, ruleId);
-    const label = 'No sign of editing in the file';
-    if (!rule) {
-      add({ id: 'document.tamper', group: 'document', label, ruleId, status: 'skipped', detail: `${ruleId} is disabled in rules ${config.version}.` });
-    } else if (!certificate || certificate.elaApplied === null) {
-      add({
-        id: 'document.tamper',
-        group: 'document',
-        label,
-        ruleId,
-        status: input.hasDocument ? 'pending' : 'skipped',
-        detail: input.hasDocument ? 'Waiting for forensics to analyse the file.' : 'No certificate was uploaded.',
-      });
-    } else {
-      const result = tamperCheck(certificate, rule.minTamperScore ?? 0.5);
-      add({ id: 'document.tamper', group: 'document', label, ruleId, status: result.status, detail: result.reason });
+    const rows = [
+      { id: 'document.metadata', label: 'No editing software named in the file', run: () => editingSoftwareCheck(certificate) },
+      { id: 'document.ela', label: 'Error level analysis', run: () => elaCheck(certificate, rule?.minTamperScore ?? null) },
+    ];
+    for (const row of rows) {
+      if (!rule) {
+        add({ id: row.id, group: 'document', label: row.label, ruleId, status: 'skipped', detail: `${ruleId} is disabled in rules ${config.version}.` });
+      } else if (!certificate || certificate.elaApplied === null) {
+        add({
+          id: row.id,
+          group: 'document',
+          label: row.label,
+          ruleId,
+          status: input.hasDocument ? 'pending' : 'skipped',
+          detail: input.hasDocument ? 'Waiting for forensics to analyse the file.' : 'No certificate was uploaded.',
+        });
+      } else {
+        const result = row.run();
+        add({ id: row.id, group: 'document', label: row.label, ruleId, status: result.status, detail: result.reason });
+      }
     }
   }
 

@@ -17,7 +17,7 @@
  */
 
 import { normalizeName, normalizeRupees, type NormalizedName } from './normalize.js';
-import { nameSimilarity } from './resolve.js';
+import { nameSimilarity, trigramSimilarity } from './resolve.js';
 
 export type CheckStatus = 'pass' | 'fail' | 'skipped';
 
@@ -108,9 +108,15 @@ function agrees(field: ComparedField, declared: string, read: string, options: C
     case 'certificate_id':
       return alnum(declared) === alnum(read);
     case 'district':
-      return alnum(declared) === alnum(read);
+      // Tolerant like a name: OCR reads "Madurai" as "Maduraj" at high
+      // confidence, and a different district shares almost no trigrams.
+      return alnum(declared) === alnum(read) || trigramSimilarity(alnum(declared).toLowerCase(), alnum(read).toLowerCase()) >= 0.5;
     case 'pincode':
-      return digits(declared) === digits(read);
+      // The first three digits are the postal sorting district; the last three
+      // a post office within it. Comparing the district only catches a
+      // certificate from elsewhere without failing a move across town — or a
+      // single misread digit, which OCR produced here at 91% confidence.
+      return digits(declared).slice(0, 3) === digits(read).slice(0, 3);
     case 'family_size':
       return digits(declared) !== '' && Number(digits(declared)) === Number(digits(read));
   }
@@ -134,9 +140,24 @@ function skeleton(name: NormalizedName): NormalizedName {
  * are beyond any spelling test; the reviewer sees both names on the checklist.
  */
 function namesAgree(declared: string, read: string, threshold: number): boolean {
-  const a = normalizeName(declared);
-  const b = normalizeName(read);
+  const [a, b] = withoutSharedInitials(normalizeName(declared), normalizeName(read));
   return Math.max(nameSimilarity(a, b), nameSimilarity(skeleton(a), skeleton(b))) >= threshold;
+}
+
+/**
+ * Drop initials both names carry. nameSimilarity pairs an initial only with a
+ * full name part on the other side, so "V. Ramachandran" against itself scored
+ * 0 — the V found no part to stand in for. An initial on both sides is simply
+ * agreement.
+ */
+function withoutSharedInitials(a: NormalizedName, b: NormalizedName): [NormalizedName, NormalizedName] {
+  const shared = a.initials.filter((initial) => b.initials.includes(initial));
+  const drop = (name: NormalizedName) => {
+    const remaining = [...name.initials];
+    for (const initial of shared) remaining.splice(remaining.indexOf(initial), 1);
+    return { ...name, initials: remaining };
+  };
+  return [drop(a), drop(b)];
 }
 
 function declaredValue(field: ComparedField, declared: DeclaredDetails): string | null {
@@ -223,28 +244,61 @@ export function editingSoftware(evidence: CertificateEvidence | null | undefined
   return (evidence?.softwareTags ?? []).filter((tag) => EDITING_SOFTWARE.test(tag));
 }
 
-export function tamperCheck(
-  evidence: CertificateEvidence | null | undefined,
-  minTamperScore: number,
-): { status: CheckStatus; reason: string; tamperScore: number | null; editors: string[] } {
-  const editors = editingSoftware(evidence);
-  const tamperScore = evidence?.tamperScore ?? null;
+type SimpleCheck = { status: CheckStatus; reason: string };
 
+/** Editing software named in the file's metadata. */
+export function editingSoftwareCheck(evidence: CertificateEvidence | null | undefined): SimpleCheck & { editors: string[] } {
+  const editors = editingSoftware(evidence);
   if (!evidence || evidence.elaApplied === null) {
-    return { status: 'skipped', reason: 'Forensics has not run on a certificate for this application.', tamperScore, editors };
+    return { status: 'skipped', reason: 'Forensics has not run on a certificate for this application.', editors };
   }
-  const anomalous = evidence.elaApplied && tamperScore !== null && tamperScore >= minTamperScore;
-  if (anomalous || editors.length > 0) {
-    const parts = [
-      anomalous ? `a region compresses unlike the rest of the page (tamper score ${tamperScore!.toFixed(2)}, threshold ${minTamperScore})` : null,
-      editors.length > 0 ? `its metadata names editing software (${editors.join(', ')})` : null,
-    ].filter(Boolean);
-    return { status: 'fail', reason: `The file shows signs of editing: ${parts.join('; and ')}. Error level analysis has a real false-positive rate — look at the highlighted regions.`, tamperScore, editors };
+  return editors.length > 0
+    ? {
+        status: 'fail',
+        reason: `The file's metadata names editing software (${editors.join(', ')}). Scanners and PDF writers are not counted; these are image and PDF editors.`,
+        editors,
+      }
+    : { status: 'pass', reason: 'No image or PDF editor is named in the file\'s metadata.', editors };
+}
+
+/**
+ * Error level analysis, scored only when the rule config sets a threshold.
+ *
+ * v3 sets none, on measurement: on the synthetic corpus ELA separated tampered
+ * documents from matched untampered controls no better than chance (AUC 0.50),
+ * and at 0.5 it caught 1 of 22 tampered certificates while flagging 9 of 43
+ * genuine ones. A signal that fails honest applicants more often than it
+ * catches forgeries does not belong in a queue score. The number is still
+ * shown, with the regions it found, for a reviewer looking at the document.
+ */
+export function elaCheck(
+  evidence: CertificateEvidence | null | undefined,
+  minTamperScore: number | null,
+): SimpleCheck & { tamperScore: number | null } {
+  const tamperScore = evidence?.tamperScore ?? null;
+  if (!evidence || evidence.elaApplied === null) {
+    return { status: 'skipped', reason: 'Forensics has not run on a certificate for this application.', tamperScore };
   }
   if (!evidence.elaApplied) {
-    return { status: 'skipped', reason: 'Error level analysis does not apply to this file (not a JPEG, or too little print); no editing software is named in its metadata.', tamperScore, editors };
+    return {
+      status: 'skipped',
+      reason: 'Error level analysis does not apply to this file (not a JPEG or a scanned PDF, or too little print).',
+      tamperScore,
+    };
   }
-  return { status: 'pass', reason: `No anomalous region (tamper score ${(tamperScore ?? 0).toFixed(2)}, below ${minTamperScore}) and no editing software in the metadata.`, tamperScore, editors };
+  const shown = `Tamper score ${(tamperScore ?? 0).toFixed(2)}`;
+  if (minTamperScore === null) {
+    return {
+      status: 'skipped',
+      reason:
+        `${shown} — shown for reference, not scored. On the synthetic corpus ELA told tampered from untampered ` +
+        'certificates no better than chance (AUC 0.50), so it is not relied on until it is shown to work.',
+      tamperScore,
+    };
+  }
+  return (tamperScore ?? 0) >= minTamperScore
+    ? { status: 'fail', reason: `${shown}, at or above the ${minTamperScore} threshold: a region compresses unlike the rest of the page.`, tamperScore }
+    : { status: 'pass', reason: `${shown}, below the ${minTamperScore} threshold.`, tamperScore };
 }
 
 /** Parsed income on the certificate, when it was read well enough to use. */

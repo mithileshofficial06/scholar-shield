@@ -15,9 +15,10 @@ import {
   compareFields,
   DETAIL_FIELDS,
   HOLDER_FIELDS,
+  editingSoftwareCheck,
+  elaCheck,
   incomeWordsCheck,
   NUMBER_FIELDS,
-  tamperCheck,
   type CertificateEvidence,
   type ComparedField,
   type ComparisonOptions,
@@ -642,28 +643,31 @@ export function certificateIncomeWordsMismatch(
 }
 
 /**
- * Error level analysis found an anomalous region, or the metadata names an
- * editor. Weighted below the high-severity band on purpose (PROJECT_REPORT.md
- * §5 Tier 2): ELA has a real false-positive rate, so it can raise a document's
- * place in the queue but never put it in the high band alone.
+ * The metadata names an image or PDF editor — or, only when the config sets
+ * minTamperScore, error level analysis found an anomalous region (see elaCheck
+ * for why v3 does not). Weighted below the high-severity band on purpose
+ * (PROJECT_REPORT.md §5 Tier 2): it can raise a document in the queue, never
+ * put it in the high band alone.
  */
 export function documentTamperSignal(
   applications: readonly ScorableApplication[],
   config: RuleConfig,
 ): RuleFinding[] {
   if (!config.enabled) return [];
-  const threshold = config.minTamperScore ?? 0.5;
+  const threshold = config.minTamperScore ?? null;
   const findings: RuleFinding[] = [];
   for (const app of applications) {
-    const check = tamperCheck(app.certificate, threshold);
-    if (check.status !== 'fail') continue;
+    const editors = editingSoftwareCheck(app.certificate);
+    const ela = elaCheck(app.certificate, threshold);
+    const failed = [editors, ela].filter((check) => check.status === 'fail');
+    if (failed.length === 0) continue;
     findings.push({
       applicationId: app.id,
       ruleId: 'DOCUMENT_TAMPER_SIGNAL',
       severity: config.severity,
       weight: config.weight,
-      reason: check.reason,
-      evidence: { tamperScore: check.tamperScore, threshold, editingSoftware: check.editors },
+      reason: `${failed.map((check) => check.reason).join(' ')} Look at the document itself.`,
+      evidence: { editingSoftware: editors.editors, tamperScore: ela.tamperScore, threshold },
     });
   }
   return findings;
