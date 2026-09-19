@@ -76,8 +76,17 @@ export async function ocrExtract(
   const extraction = await ctx.ocr.extract(bytes, `${documentId}.jpg`);
 
   await query(
-    `UPDATE documents SET extracted_fields = $2 WHERE id = $1`,
-    [documentId, JSON.stringify(extraction.fields)],
+    `UPDATE documents SET extracted_fields = $2, ocr_report = $3 WHERE id = $1`,
+    [
+      documentId,
+      JSON.stringify(extraction.fields),
+      JSON.stringify({
+        incomeWordsMismatch: extraction.incomeWordsMismatch,
+        pageConfidence: extraction.pageConfidence,
+        wordCount: extraction.wordCount,
+        skewCorrectedDegrees: extraction.skewCorrectedDegrees,
+      }),
+    ],
   );
 
   return extraction;
@@ -129,10 +138,14 @@ export async function verificationCheck(
   });
   const manualCheckUrl = `${config.VERIFICATION_PORTAL_URL}?${params.toString()}`;
 
+  // Only the first time. There is no unique key on the table, and a re-run —
+  // a retried job, a re-uploaded document — used to append a fresh
+  // manual_check_required row, which as the newest row silently replaced any
+  // result a reviewer had already recorded.
   await query(
     `INSERT INTO verification_results (application_id, adapter, status, manual_check_url)
-     VALUES ($1, 'ManualLinkAdapter', 'manual_check_required', $2)
-     ON CONFLICT DO NOTHING`,
+     SELECT $1, 'ManualLinkAdapter', 'manual_check_required', $2
+      WHERE NOT EXISTS (SELECT 1 FROM verification_results WHERE application_id = $1)`,
     [doc.application_id, manualCheckUrl],
   );
 
