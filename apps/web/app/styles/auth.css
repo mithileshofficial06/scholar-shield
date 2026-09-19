@@ -148,3 +148,91 @@
     padding: 0 12px;
   }
 }
+
+/* Applicant status list */
+
+.status-card {
+  max-width: 560px;
+}
+
+.status-list {
+  display: grid;
+  gap: 16px;
+  margin-top: 22px;
+  padding: 0;
+  list-style: none;
+}
+
+.status-item {
+  padding: 18px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+}
+
+.status-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.status-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.status-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-3);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.status-step.is-done {
+  color: var(--ink);
+}
+
+.status-dot {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--surface);
+  font-size: 13px;
+}
+
+.status-step.is-done .status-dot {
+  background: var(--cyan);
+}
+
+.status-dot svg {
+  width: 15px;
+  height: 15px;
+}
+
+.status-desc {
+  margin-top: 14px;
+  color: var(--text-2);
+  font-size: 15px;
+}
+
+.status-ref {
+  margin-top: 8px;
+  color: var(--text-3);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
