@@ -501,3 +501,13 @@
     padding: 16px;
   }
 }
+
+.field-error {
+  color: var(--high-ink);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.input[aria-invalid='true'] {
+  background: var(--high-soft);
+}

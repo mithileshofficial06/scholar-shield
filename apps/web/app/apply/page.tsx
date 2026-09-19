@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useRef, useState, type FormEvent } from 'react';
+import { createContext, useContext, useRef, useState, type FormEvent } from 'react';
 import { ArrowIcon, CheckIcon, LockIcon, UploadIcon, AlertIcon, DatabaseIcon } from '../components/Icons';
 
 /**
@@ -11,9 +11,28 @@ import { ArrowIcon, CheckIcon, LockIcon, UploadIcon, AlertIcon, DatabaseIcon } f
  * convenient to type: the identity block is what the household resolver matches
  * on, the assessment block is what the scoring engine reads.
  *
- * Not yet wired to the API — that lands with the upload endpoint. Until then the
- * success state says so plainly instead of claiming the application was queued.
+ * Posts straight from the browser to the API rather than through this origin's
+ * proxy. Submission is public (the applicant has no session yet), and the API's
+ * per-address rate limit only means something if it sees the applicant's own
+ * address — behind a proxy every applicant would share one bucket. CORS on the
+ * API admits this origin and nothing else.
  */
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+
+/** What the API returns on submission — applicant-safe fields only. */
+interface Submitted {
+  id: string;
+  cycle: string;
+  stage: string;
+  submittedAt: string;
+  documentCount: number;
+}
+
+type FieldErrors = Partial<Record<string, string[]>>;
+
+/** The API's per-field messages, keyed by field id, from the last refused submission. */
+const FieldErrorsContext = createContext<FieldErrors>({});
 
 const SECTIONS = [
   { title: 'Identity', hint: 'Who is applying, and their guardian' },
@@ -23,7 +42,10 @@ const SECTIONS = [
 ];
 
 export default function ApplyPage() {
-  const [submitted, setSubmitted] = useState(false);
+  const [submitted, setSubmitted] = useState<Submitted | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [active, setActive] = useState(0);
   const [complete, setComplete] = useState<boolean[]>(SECTIONS.map(() => false));
   const [fileName, setFileName] = useState<string | null>(null);
@@ -42,9 +64,46 @@ export default function ApplyPage() {
     );
   };
 
-  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setSubmitted(true);
+    setBusy(true);
+    setError(null);
+    setFieldErrors({});
+
+    const data = new FormData(event.currentTarget);
+    // An empty file input still submits a zero-byte part, which the API would
+    // sniff, fail to recognise, and refuse as an unsupported type.
+    const file = data.get('certificate');
+    if (file instanceof File && file.size === 0) data.delete('certificate');
+
+    let res: Response;
+    try {
+      res = await fetch(`${API_URL}/applications`, { method: 'POST', body: data });
+    } catch {
+      setError('The application service is not responding. Nothing was submitted — try again shortly.');
+      setBusy(false);
+      return;
+    }
+
+    const body = (await res.json().catch(() => ({}))) as Partial<Submitted> & {
+      message?: string;
+      details?: FieldErrors;
+    };
+
+    if (!res.ok) {
+      setFieldErrors(body.details ?? {});
+      setError(
+        res.status === 400
+          ? 'Some fields need attention — see the messages below each one.'
+          : (body.message ?? 'Submission failed. Nothing was saved.'),
+      );
+      setBusy(false);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    setSubmitted(body as Submitted);
+    setBusy(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -125,136 +184,165 @@ export default function ApplyPage() {
                 <span className="success-icon">
                   <CheckIcon />
                 </span>
-                <h2>Preview complete</h2>
+                <h2>Application submitted</h2>
                 <p>
-                  Your answers passed the form&rsquo;s checks. This page isn&rsquo;t connected to
-                  the API yet, so <strong>nothing was saved or queued</strong> — submission arrives
-                  with the upload endpoint.
+                  Your application for the {submitted.cycle} cycle has been received
+                  {submitted.documentCount > 0 ? ' along with your certificate' : ''}. The committee
+                  will review it; you&rsquo;ll see the decision once review is complete.
+                </p>
+                <p>
+                  Reference <strong className="tabular">{submitted.id}</strong>
+                </p>
+                <p>
+                  To check progress later, request a sign-in link with the email address you used.
                 </p>
                 <div className="success-actions">
-                  <button type="button" className="btn btn-primary" onClick={() => setSubmitted(false)}>
-                    Back to the form
-                  </button>
+                  <Link href="/status" className="btn btn-primary">
+                    Check application status
+                    <ArrowIcon />
+                  </Link>
                   <Link href="/" className="btn btn-ghost">
                     Return to overview
                   </Link>
                 </div>
               </div>
             ) : (
-              <form className="apply-form" onSubmit={onSubmit} onInput={recompute}>
-                <fieldset
-                  ref={(el) => {
-                    sectionRefs.current[0] = el;
-                  }}
-                  className={`card form-card${active === 0 ? ' is-active' : ''}`}
-                  onFocus={() => setActive(0)}
-                >
-                  <FormCardHead index={0} />
-                  <div className="field-grid">
-                    <Field id="applicantName" label="Applicant full name" placeholder="As printed on the certificate" required />
-                    <Field
-                      id="guardianName"
-                      label="Guardian full name"
-                      placeholder="Parent or guardian"
-                      hint="Matched across applications to detect households."
-                      required
-                    />
-                    <Field id="guardianPhone" label="Guardian phone" placeholder="10-digit mobile" inputMode="tel" maxLength={10} />
-                  </div>
-                </fieldset>
+              <FieldErrorsContext.Provider value={fieldErrors}>
+                <form className="apply-form" onSubmit={onSubmit} onInput={recompute}>
+                  {error ? (
+                    <p className="auth-error" role="alert">
+                      {error}
+                    </p>
+                  ) : null}
 
-                <fieldset
-                  ref={(el) => {
-                    sectionRefs.current[1] = el;
-                  }}
-                  className={`card form-card${active === 1 ? ' is-active' : ''}`}
-                  onFocus={() => setActive(1)}
-                >
-                  <FormCardHead index={1} />
-                  <div className="field-grid">
-                    <Field id="addressLine" label="Address" placeholder="Door number, street, locality" wide required />
-                    <Field id="district" label="District" placeholder="e.g. Coimbatore" required />
-                    <Field id="pincode" label="PIN code" placeholder="6 digits" inputMode="numeric" maxLength={6} />
-                  </div>
-                </fieldset>
-
-                <fieldset
-                  ref={(el) => {
-                    sectionRefs.current[2] = el;
-                  }}
-                  className={`card form-card${active === 2 ? ' is-active' : ''}`}
-                  onFocus={() => setActive(2)}
-                >
-                  <FormCardHead index={2} />
-                  <div className="field-grid">
-                    <Field
-                      id="declaredAnnualIncome"
-                      label="Annual household income (₹)"
-                      placeholder="e.g. 96000"
-                      type="number"
-                      min={0}
-                      required
-                    />
-                    <Field
-                      id="declaredFamilySize"
-                      label="Family size"
-                      placeholder="People in the household"
-                      type="number"
-                      min={1}
-                      max={30}
-                      hint="Income is compared per person, not per household."
-                      required
-                    />
-                  </div>
-                </fieldset>
-
-                <fieldset
-                  ref={(el) => {
-                    sectionRefs.current[3] = el;
-                  }}
-                  className={`card form-card${active === 3 ? ' is-active' : ''}`}
-                  onFocus={() => setActive(3)}
-                >
-                  <FormCardHead index={3} />
-                  <div className="field-grid">
-                    <Field id="certificateId" label="Certificate number" placeholder="TN-CHN-2026-000000" />
-                    <Field id="issuingOffice" label="Issuing office" placeholder="Taluk office" />
-                    <Field id="certificateIssueDate" label="Issue date" type="date" />
-
-                    <div className="field is-wide">
-                      <span className="field-label">Income certificate</span>
-                      <label className={`dropzone${fileName ? ' has-file' : ''}`} htmlFor="certificate">
-                        <span className="dropzone-icon">{fileName ? <CheckIcon /> : <UploadIcon />}</span>
-                        <span>
-                          <span className="dropzone-title">{fileName ?? 'Choose a PDF or image'}</span>
-                          <span className="dropzone-hint">
-                            {fileName ? 'Click to replace' : 'Synthetic documents only · up to 12 MB'}
-                          </span>
-                        </span>
-                        <input
-                          id="certificate"
-                          name="certificate"
-                          type="file"
-                          accept=".pdf,image/*"
-                          className="visually-hidden"
-                          onChange={(event) => setFileName(event.target.files?.[0]?.name ?? null)}
-                        />
-                      </label>
+                  <fieldset
+                    ref={(el) => {
+                      sectionRefs.current[0] = el;
+                    }}
+                    className={`card form-card${active === 0 ? ' is-active' : ''}`}
+                    onFocus={() => setActive(0)}
+                  >
+                    <FormCardHead index={0} />
+                    <div className="field-grid">
+                      <Field
+                        id="applicantName"
+                        label="Applicant full name"
+                        placeholder="As printed on the certificate"
+                        required
+                      />
+                      <Field
+                        id="email"
+                        label="Email"
+                        type="email"
+                        placeholder="you@example.com"
+                        autoComplete="email"
+                        hint="Where your sign-in link to check the application is sent."
+                        required
+                      />
+                      <Field
+                        id="guardianName"
+                        label="Guardian full name"
+                        placeholder="Parent or guardian"
+                        hint="Matched across applications to detect households."
+                        required
+                      />
+                      <Field id="guardianPhone" label="Guardian phone" placeholder="10-digit mobile" inputMode="tel" maxLength={10} />
                     </div>
-                  </div>
-                </fieldset>
+                  </fieldset>
 
-                <div className="card submit-bar">
-                  <p>
-                    Submitting records a declaration. Knowingly false declarations are a criminal
-                    offence under Indian law.
-                  </p>
-                  <button type="submit" className="btn btn-primary">
-                    Submit application
-                    <ArrowIcon />
-                  </button>
-                </div>
-              </form>
+                  <fieldset
+                    ref={(el) => {
+                      sectionRefs.current[1] = el;
+                    }}
+                    className={`card form-card${active === 1 ? ' is-active' : ''}`}
+                    onFocus={() => setActive(1)}
+                  >
+                    <FormCardHead index={1} />
+                    <div className="field-grid">
+                      <Field id="addressLine" label="Address" placeholder="Door number, street, locality" wide required />
+                      <Field id="district" label="District" placeholder="e.g. Coimbatore" required />
+                      <Field id="pincode" label="PIN code" placeholder="6 digits" inputMode="numeric" maxLength={6} />
+                    </div>
+                  </fieldset>
+
+                  <fieldset
+                    ref={(el) => {
+                      sectionRefs.current[2] = el;
+                    }}
+                    className={`card form-card${active === 2 ? ' is-active' : ''}`}
+                    onFocus={() => setActive(2)}
+                  >
+                    <FormCardHead index={2} />
+                    <div className="field-grid">
+                      <Field
+                        id="declaredAnnualIncome"
+                        label="Annual household income (₹)"
+                        placeholder="e.g. 96000"
+                        type="number"
+                        min={0}
+                        required
+                      />
+                      <Field
+                        id="declaredFamilySize"
+                        label="Family size"
+                        placeholder="People in the household"
+                        type="number"
+                        min={1}
+                        max={30}
+                        hint="Income is compared per person, not per household."
+                        required
+                      />
+                    </div>
+                  </fieldset>
+
+                  <fieldset
+                    ref={(el) => {
+                      sectionRefs.current[3] = el;
+                    }}
+                    className={`card form-card${active === 3 ? ' is-active' : ''}`}
+                    onFocus={() => setActive(3)}
+                  >
+                    <FormCardHead index={3} />
+                    <div className="field-grid">
+                      <Field id="certificateId" label="Certificate number" placeholder="TN-CHN-2026-000000" />
+                      <Field id="issuingOffice" label="Issuing office" placeholder="Taluk office" />
+                      <Field id="certificateIssueDate" label="Issue date" type="date" />
+
+                      <div className="field is-wide">
+                        <span className="field-label">Income certificate</span>
+                        <label className={`dropzone${fileName ? ' has-file' : ''}`} htmlFor="certificate">
+                          <span className="dropzone-icon">{fileName ? <CheckIcon /> : <UploadIcon />}</span>
+                          <span>
+                            <span className="dropzone-title">{fileName ?? 'Choose a PDF or image'}</span>
+                            <span className="dropzone-hint">
+                              {fileName ? 'Click to replace' : 'Synthetic documents only · up to 12 MB'}
+                            </span>
+                          </span>
+                          <input
+                            id="certificate"
+                            name="certificate"
+                            type="file"
+                            accept=".pdf,image/*"
+                            className="visually-hidden"
+                            onChange={(event) => setFileName(event.target.files?.[0]?.name ?? null)}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </fieldset>
+
+                  <div className="card submit-bar">
+                    <p>
+                      Submitting records a declaration. Knowingly false declarations are a criminal
+                      offence under Indian law.
+                    </p>
+                    <button type="submit" className="btn btn-primary" disabled={busy}>
+                      {busy ? 'Submitting…' : 'Submit application'}
+                      {busy ? null : <ArrowIcon />}
+                    </button>
+                  </div>
+                </form>
+              </FieldErrorsContext.Provider>
             )}
           </div>
         </div>
@@ -284,6 +372,8 @@ interface FieldProps extends React.InputHTMLAttributes<HTMLInputElement> {
 }
 
 function Field({ id, label, hint, wide, required, ...input }: FieldProps) {
+  const error = useContext(FieldErrorsContext)[id]?.[0];
+  const describedBy = [hint ? `${id}-hint` : null, error ? `${id}-error` : null].filter(Boolean).join(' ');
   return (
     <div className={`field${wide ? ' is-wide' : ''}`}>
       <label className="field-label" htmlFor={id}>
@@ -295,12 +385,18 @@ function Field({ id, label, hint, wide, required, ...input }: FieldProps) {
         name={id}
         className="input"
         required={required}
-        aria-describedby={hint ? `${id}-hint` : undefined}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={describedBy || undefined}
         {...input}
       />
       {hint ? (
         <span className="field-hint" id={`${id}-hint`}>
           {hint}
+        </span>
+      ) : null}
+      {error ? (
+        <span className="field-error" id={`${id}-error`}>
+          {error}
         </span>
       ) : null}
     </div>
