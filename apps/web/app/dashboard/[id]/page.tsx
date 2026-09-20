@@ -29,6 +29,7 @@ const STATUS_TONE: Record<string, string> = {
   approved: 'sev-low',
   rejected: 'sev-high',
   escalated: 'sev-medium',
+  trashed: '',
   ready_for_review: '',
   submitted: '',
   processing: '',

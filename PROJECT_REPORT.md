@@ -42,7 +42,7 @@ These are enforced by the schema and the code paths, not by policy language.
 1. **No automated verdicts.** Score changes queue position and nothing else. There is no code path by which the system rejects an application. `applications.status` reaches a terminal state only via a row in `reviews` carrying a `reviewer_id` and a non-empty typed reason.
 2. **Manual verification is the primary path.** The system generates a pre-filled link to the state's public verification portal for every certificate. It never scrapes a government portal (§5 Tier 3, §14) and never fabricates or infers a verification result.
 3. **Synthetic data only.** Every applicant, family, address, and certificate image in this project is generated. No real student's document is ingested at any point.
-4. **Every decision is auditable.** Approve / escalate / reject each require a typed reason and write an immutable `audit_log` row. The audit log is append-only at the database level — the application role holds no `UPDATE` or `DELETE` grant on that table.
+4. **Every decision is auditable.** Approve / escalate / reject / trash each require a typed reason and write an immutable `audit_log` row. The audit log is append-only at the database level — the application role holds no `UPDATE` or `DELETE` grant on that table.
 5. **Every flag is explainable.** No black-box model in v1. Each flag carries a human-readable reason string, the rule ID that produced it, the rule-config version, and the exact field values that triggered it.
 
 ## 5. Risk signals, in order of weight
@@ -229,7 +229,7 @@ scholarshield/
 - Retries use exponential backoff with a capped attempt count; exhausted jobs land in a **dead-letter queue** surfaced in the admin UI rather than failing silently.
 - Stage 4 (household reconciliation) re-runs for *every application in the affected component* when a new application joins it — a contradiction is a property of the household, not of one upload.
 
-**Admin dashboard:** risk queue (sortable/filterable by score and flag type) · application detail (extracted fields, forensics heatmap overlay, verification status, **household graph visualization** showing the resolved component and which edges triggered which rule) · reviewer actions (approve/escalate/reject, each requiring a typed reason) · anonymous tip form.
+**Admin dashboard:** risk queue (sortable/filterable by score and flag type) · application detail (extracted fields, forensics heatmap overlay, verification status, **household graph visualization** showing the resolved component and which edges triggered which rule) · reviewer actions (approve/escalate/reject/trash, each requiring a typed reason) · anonymous tip form.
 
 **Auth and personas:**
 

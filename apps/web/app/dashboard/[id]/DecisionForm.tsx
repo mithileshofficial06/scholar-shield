@@ -8,7 +8,20 @@ const OPTIONS: { value: ReviewDecision; label: string; hint: string; tone: strin
   { value: 'approve', label: 'Approve', hint: 'Award the scholarship.', tone: 'low' },
   { value: 'escalate', label: 'Escalate', hint: 'Send to a senior reviewer. Not a decision.', tone: 'medium' },
   { value: 'reject', label: 'Reject', hint: 'Refuse the application.', tone: 'high' },
+  {
+    value: 'trash',
+    label: 'Trash',
+    hint: 'Not a real application — junk details, or an unrelated file. Not a refusal.',
+    tone: 'muted',
+  },
 ];
+
+/** Shown under the buttons when Trash is picked, so the distinction is made once. */
+const TRASH_NOTE =
+  'Trash is for submissions that were never applications: random details, or a file that is not a certificate. ' +
+  'It is terminal and audited exactly like a rejection, but it stays out of the queue and out of the committee’s ' +
+  'decided list — so the reject rate keeps meaning “applications we turned down”. If the applicant was ' +
+  'genuine and simply careless, reject with a reason instead, so they are told what was wrong.';
 
 /**
  * The reviewer's decision.
@@ -33,14 +46,14 @@ export function DecisionForm({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const settled = status === 'approved' || status === 'rejected';
+  const settled = status === 'approved' || status === 'rejected' || status === 'trashed';
 
   if (settled) {
     return (
       <div className="panel-empty">
         <p>
-          This application was <strong>{status}</strong>. Decisions are append-only — reopening it
-          would mean a new application, not an edit to this one.
+          This application was <strong>{status === 'trashed' ? 'trashed' : status}</strong>. Decisions
+          are append-only — reopening it would mean a new application, not an edit to this one.
         </p>
       </div>
     );
@@ -92,6 +105,8 @@ export function DecisionForm({
         ))}
       </fieldset>
 
+      {decision === 'trash' ? <p className="decision-note">{TRASH_NOTE}</p> : null}
+
       {error ? (
         <p className="auth-error" role="alert">
           {error}
@@ -118,7 +133,7 @@ export function DecisionForm({
       </div>
 
       <button type="submit" className="btn btn-primary" disabled={busy || reason.trim().length < 12}>
-        {busy ? 'Recording…' : `Record ${decision}`}
+        {busy ? 'Recording…' : decision === 'trash' ? 'Move to trash' : `Record ${decision}`}
       </button>
     </form>
   );

@@ -515,7 +515,7 @@ applicationsRouter.post('/:id/verification', requireStaff(), async (req, res) =>
 /* ---------------------------------------------------------------- decision */
 
 const reviewSchema = z.object({
-  decision: z.enum(['approve', 'escalate', 'reject']),
+  decision: z.enum(['approve', 'escalate', 'reject', 'trash']),
   // Long enough to be a reason rather than a shrug. The database also refuses
   // an empty string, so this is the friendly half of the same rule.
   reason: z.string().trim().min(12).max(2000),
@@ -542,7 +542,14 @@ applicationsRouter.post('/:id/review', requireStaff(), async (req, res) => {
 
   const reviewerId = req.session!.sub;
   const { decision, reason } = body.data;
-  const nextStatus = decision === 'approve' ? 'approved' : decision === 'reject' ? 'rejected' : 'escalated';
+  const nextStatus =
+    decision === 'approve'
+      ? 'approved'
+      : decision === 'reject'
+        ? 'rejected'
+        : decision === 'trash'
+          ? 'trashed'
+          : 'escalated';
 
   const outcome = await withTransaction(async (client) => {
     // Lock the row so two reviewers cannot decide the same application at once.
@@ -554,8 +561,14 @@ applicationsRouter.post('/:id/review', requireStaff(), async (req, res) => {
     if (!current) return { kind: 'not_found' as const };
 
     // Escalated is deliberately not terminal: it means "someone senior should
-    // look", and that person still has to decide.
-    if (current.status === 'approved' || current.status === 'rejected') {
+    // look", and that person still has to decide. Trashed is terminal — if it
+    // turns out a real application was binned, the applicant reapplies, which
+    // is the same remedy an erroneous rejection has.
+    if (
+      current.status === 'approved' ||
+      current.status === 'rejected' ||
+      current.status === 'trashed'
+    ) {
       return { kind: 'already_decided' as const, status: current.status };
     }
 

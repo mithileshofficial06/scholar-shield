@@ -19,10 +19,13 @@ export const APPLICATION_STATUSES = [
   'approved',
   'escalated',
   'rejected',
+  // Not a refusal: an application that was never a real one. See
+  // db/migrations/005_trash_disposition.sql.
+  'trashed',
 ] as const;
 export type ApplicationStatus = (typeof APPLICATION_STATUSES)[number];
 
-export const REVIEW_DECISIONS = ['approve', 'escalate', 'reject'] as const;
+export const REVIEW_DECISIONS = ['approve', 'escalate', 'reject', 'trash'] as const;
 export type ReviewDecision = (typeof REVIEW_DECISIONS)[number];
 
 export const VERIFICATION_STATUSES = [

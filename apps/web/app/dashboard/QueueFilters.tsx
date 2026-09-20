@@ -74,6 +74,7 @@ export function QueueFilters({ rules, districts, cycles, total }: Props) {
           options={[
             ['awaiting', 'Awaiting review'],
             ['decided', 'Decided'],
+            ['trashed', 'Trash'],
             ['all', 'All'],
           ]}
         />

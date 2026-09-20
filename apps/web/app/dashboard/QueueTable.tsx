@@ -18,6 +18,7 @@ const STATUS: Record<QueueItem['status'], { label: string; tone: string }> = {
   escalated: { label: 'Escalated', tone: 'is-escalated' },
   approved: { label: 'Approved', tone: 'is-approved' },
   rejected: { label: 'Rejected', tone: 'is-rejected' },
+  trashed: { label: 'Trashed', tone: 'is-muted' },
 };
 
 /**

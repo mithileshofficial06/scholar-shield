@@ -26,8 +26,13 @@ export const queueRouter = Router();
 
 const querySchema = z.object({
   cycle: z.string().regex(/^\d{4}$/).optional(),
-  /** `decided` covers approved and rejected; the default is the working queue. */
-  status: z.enum(['awaiting', 'decided', 'all']).default('awaiting'),
+  /**
+   * `decided` covers approved and rejected. `trashed` is its own filter rather
+   * than part of `decided`, because the point of trashing is that those rows
+   * stop appearing in the lists a committee reads — but they stay auditable.
+   * The default is the working queue.
+   */
+  status: z.enum(['awaiting', 'decided', 'trashed', 'all']).default('awaiting'),
   severity: z.enum(['high', 'medium', 'low', 'any']).default('any'),
   ruleId: z.string().max(60).optional(),
   district: z.string().max(80).optional(),
@@ -71,7 +76,13 @@ function buildQuery(filters: QueueQuery): { text: string; values: unknown[] } {
     case 'decided':
       where.push(`a.status IN ('approved', 'rejected')`);
       break;
+    case 'trashed':
+      where.push(`a.status = 'trashed'`);
+      break;
     case 'all':
+      // Still excludes trash: "all" means every application a reviewer might
+      // act on, and a binned one is not. Ask for `trashed` to see those.
+      where.push(`a.status <> 'trashed'`);
       break;
   }
 
@@ -203,9 +214,13 @@ queueRouter.get('/export.csv', requireStaff(), async (req, res) => {
        ) r ON true
        LEFT JOIN users u ON u.id = r.reviewer_id
       WHERE ($1::text IS NULL OR a.cycle = $1)
+        -- The export is a committee's minutes. Trashed rows are in it only when
+        -- they are what was asked for, so a reject rate read off this file is
+        -- a count of refusals and not of junk.
+        AND (CASE WHEN $2::bool THEN a.status = 'trashed' ELSE a.status <> 'trashed' END)
       GROUP BY a.id, r.decision, r.reason, u.email, r.created_at
       ORDER BY a.risk_score DESC, a.submitted_at ASC`,
-    [parsed.data.cycle ?? null],
+    [parsed.data.cycle ?? null, parsed.data.status === 'trashed'],
   );
 
   const header = [

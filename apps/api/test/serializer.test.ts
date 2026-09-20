@@ -62,5 +62,9 @@ describe('applicant serializer', () => {
     // An applicant must not be able to tell approval from rejection from escalation
     // by the stage field alone — the decision is communicated deliberately, not leaked.
     expect(stageFor('escalated')).toBe('decided');
+    // Trash is the one a reviewer would least like leaked: an applicant told
+    // their submission was binned learns the committee's private judgement of
+    // it. It collapses into the same word as every other outcome.
+    expect(stageFor('trashed')).toBe('decided');
   });
 });

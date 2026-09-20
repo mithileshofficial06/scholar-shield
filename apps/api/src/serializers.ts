@@ -51,6 +51,9 @@ function toStage(status: ApplicationStatus): ApplicantApplicationView['stage'] {
     case 'approved':
     case 'escalated':
     case 'rejected':
+    // An applicant is told a decision was recorded, never that a reviewer
+    // judged the submission junk. The stage vocabulary stays four words wide.
+    case 'trashed':
       return 'decided';
   }
 }

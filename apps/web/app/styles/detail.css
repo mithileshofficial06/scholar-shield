@@ -629,6 +629,23 @@
   background: var(--high-soft);
 }
 
+/* Trash is grey on purpose. The three severity fills read as a scale of how bad
+   an application is; trash is not a point on that scale, it is a submission
+   leaving the scale entirely. */
+.decision-option.is-selected.sev-muted {
+  background: var(--surface-2);
+}
+
+.decision-note {
+  margin: -8px 0 18px;
+  padding: 12px 14px;
+  border-left: 3px solid var(--ink);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
 .decision-label {
   display: block;
   color: var(--text);
