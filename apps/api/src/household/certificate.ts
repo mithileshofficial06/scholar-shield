@@ -37,6 +37,10 @@ export interface CertificateEvidence {
   elaApplied: boolean | null;
   /** Software named in the file's metadata (EXIF, or a PDF's Producer/Creator). */
   softwareTags: string[];
+  /** Mean OCR confidence across the page; null before OCR has run. */
+  pageConfidence?: number | null;
+  /** Words OCR found on the page; null before OCR has run. */
+  wordCount?: number | null;
 }
 
 /** The declared side of each comparison. */
@@ -65,6 +69,113 @@ export interface FieldComparison {
   certificate: string | null;
   confidence: number | null;
   reason: string;
+}
+
+/**
+ * The fields a document must have some of before it is an income certificate at
+ * all. Not the fields we compare — the fields whose PRESENCE identifies the form.
+ */
+const IDENTIFYING_FIELDS = [
+  'applicant_name',
+  'guardian_name',
+  'annual_income',
+  'annual_income_words',
+  'certificate_id',
+  'issue_date',
+  'issuing_office',
+  'district',
+] as const;
+
+export interface DocumentIdentityOptions {
+  /** Below this mean page confidence, the read is too poor to conclude anything. */
+  minPageConfidence: number;
+  /** Below this many words, there is not enough text to judge. */
+  minWordCount: number;
+  /** At least this many identifying fields must be found. */
+  minIdentifyingFields: number;
+}
+
+/**
+ * Is the uploaded file an income certificate at all?
+ *
+ * THE GAP THIS CLOSES
+ * -------------------
+ * Every comparison in this file degrades to `skipped` when OCR finds nothing to
+ * compare — deliberately, so a bad scan of an honest certificate never reads as
+ * a lie. The cost is that a file which is not a certificate produces the same
+ * screen of skips as a blurry one that is. Someone can attach an unrelated PDF,
+ * type whatever they like on the form, and every check politely declines to run.
+ *
+ * The distinction that fixes it is not "did OCR find the fields" but "did OCR
+ * READ THE PAGE WELL AND STILL not find the fields". A legible page with none of
+ * a certificate's furniture on it is not an unreadable certificate. It is not a
+ * certificate.
+ *
+ * So this fails only in that corner, and skips everywhere else — an unread page,
+ * a poor read, a page too sparse to judge. An honest applicant whose scan came
+ * out badly keeps the benefit of the doubt they have always had here.
+ */
+export function documentIdentityCheck(
+  evidence: CertificateEvidence | null,
+  options: DocumentIdentityOptions,
+): { status: CheckStatus; reason: string; found: number; expected: number } {
+  const expected = IDENTIFYING_FIELDS.length;
+  const base = { found: 0, expected };
+
+  if (!evidence) {
+    return { ...base, status: 'skipped', reason: 'OCR has not read a document for this application yet.' };
+  }
+
+  const found = IDENTIFYING_FIELDS.filter((name) => {
+    const field = evidence.fields[name];
+    return Boolean(field?.value && field.value.trim().length > 0);
+  }).length;
+
+  const confidence = evidence.pageConfidence ?? null;
+  const words = evidence.wordCount ?? null;
+
+  if (found >= options.minIdentifyingFields) {
+    return {
+      status: 'pass',
+      reason: `${found} of ${expected} identifying fields were found on the page, so this is an income certificate of the expected form.`,
+      found,
+      expected,
+    };
+  }
+
+  if (confidence === null || words === null) {
+    return { ...base, found, status: 'skipped', reason: 'OCR did not report page confidence or a word count, so the read cannot be judged.' };
+  }
+
+  if (words < options.minWordCount) {
+    return {
+      status: 'skipped',
+      reason: `Only ${words} words were found on the page — too little text to tell an unreadable certificate from a document that is not one.`,
+      found,
+      expected,
+    };
+  }
+
+  if (confidence < options.minPageConfidence) {
+    return {
+      status: 'skipped',
+      reason: `The page was read at ${Math.round(confidence * 100)}% average confidence, below the ${Math.round(options.minPageConfidence * 100)}% needed to conclude anything from missing fields. A poor scan of a real certificate looks exactly like this.`,
+      found,
+      expected,
+    };
+  }
+
+  return {
+    status: 'fail',
+    reason:
+      `The page was read clearly — ${words} words at ${Math.round(confidence * 100)}% average confidence — ` +
+      `and still carries only ${found} of ${expected} fields an income certificate has. A legible page missing ` +
+      `a certificate's own furniture is not a certificate read badly; it is some other document. Every check ` +
+      `below compares against fields that are not on this page, which is why they report nothing rather than ` +
+      `a mismatch.`,
+    found,
+    expected,
+  };
 }
 
 export interface ComparisonOptions {

@@ -54,7 +54,7 @@ interface ApplicationRow {
   pincode: string | null;
   /** The latest document that OCR has read, and what the pipeline learned from it. */
   certificate_fields: Record<string, { value: string | null; confidence: number } | undefined> | null;
-  ocr_report: { incomeWordsMismatch?: boolean | null } | null;
+  ocr_report: { incomeWordsMismatch?: boolean | null; pageConfidence?: number | null; wordCount?: number | null } | null;
   tamper_score: string | null;
   forensics: { elaApplied?: boolean; encoding?: { softwareTags?: string[] } } | null;
   verification_status: ScorableApplication['verificationStatus'];
@@ -106,6 +106,8 @@ function toCertificateEvidence(row: ApplicationRow): CertificateEvidence | null 
   return {
     fields: row.certificate_fields,
     incomeWordsMismatch: row.ocr_report?.incomeWordsMismatch ?? null,
+    pageConfidence: row.ocr_report?.pageConfidence ?? null,
+    wordCount: row.ocr_report?.wordCount ?? null,
     tamperScore: row.tamper_score === null ? null : Number(row.tamper_score),
     elaApplied: row.forensics ? (row.forensics.elaApplied ?? true) : null,
     softwareTags: row.forensics?.encoding?.softwareTags ?? [],

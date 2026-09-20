@@ -117,9 +117,22 @@ describe('rule config v4', () => {
     }
   });
 
+});
+
+describe('rule config v5', () => {
+  const v4 = loadRulesConfig('v4');
+  const v5 = loadRulesConfig('v5');
+
+  it('carries every v4 rule unchanged and adds exactly the document-identity check', () => {
+    for (const [id, rule] of Object.entries(v4.rules)) expect(v5.rules[id]).toEqual(rule);
+    expect(Object.keys(v5.rules).filter((id) => !(id in v4.rules))).toEqual([
+      'DOCUMENT_NOT_A_CERTIFICATE',
+    ]);
+  });
+
   it('is the version the engine scores under', () => {
-    expect(ACTIVE_RULES_VERSION).toBe('v4');
-    expect(config.version).toBe('v4');
+    expect(ACTIVE_RULES_VERSION).toBe('v5');
+    expect(config.version).toBe('v5');
   });
 });
 

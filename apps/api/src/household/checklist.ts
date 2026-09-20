@@ -15,6 +15,7 @@ import type { ApplicationCheck, ApplicationChecklist, CheckStatus } from '@schol
 
 import {
   compareField,
+  documentIdentityCheck,
   editingSoftwareCheck,
   elaCheck,
   incomeWordsCheck,
@@ -141,6 +142,28 @@ export function buildChecklist(input: ChecklistInput): ApplicationChecklist {
         ? `OCR read the page at ${Math.round((input.pageConfidence ?? 0) * 100)}% average confidence. Fields below that confidence floor are skipped, never failed.`
         : 'OCR has not finished reading the certificate yet.',
   });
+
+  // Is it a certificate at all? Placed directly after "could the text be read",
+  // because it is the question whose answer decides what every skip below means:
+  // fields missing from a certificate is a bad scan; fields missing from a legible
+  // page is the wrong document.
+  {
+    const ruleId = 'DOCUMENT_NOT_A_CERTIFICATE';
+    const rule = ruleConfig(config, ruleId);
+    const label = 'The document is an income certificate';
+    if (!rule) {
+      add({ id: 'document.identity', group: 'document', label, ruleId, status: 'skipped', detail: `${ruleId} is disabled in rules ${config.version}.` });
+    } else if (!input.hasDocument) {
+      add({ id: 'document.identity', group: 'document', label, ruleId, status: 'skipped', detail: 'No certificate was uploaded.' });
+    } else {
+      const result = documentIdentityCheck(certificate, {
+        minPageConfidence: rule.minOcrConfidence ?? 0.8,
+        minWordCount: rule.minWordCount ?? 40,
+        minIdentifyingFields: rule.minIdentifyingFields ?? 3,
+      });
+      add({ id: 'document.identity', group: 'document', label, ruleId, status: result.status, detail: result.reason });
+    }
+  }
 
   // ------------------------------------------------- the certificate vs the form
 

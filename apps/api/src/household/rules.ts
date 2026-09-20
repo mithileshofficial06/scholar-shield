@@ -13,6 +13,7 @@
 
 import {
   compareFields,
+  documentIdentityCheck,
   DETAIL_FIELDS,
   HOLDER_FIELDS,
   editingSoftwareCheck,
@@ -41,6 +42,10 @@ export interface RuleConfig {
   minOcrConfidence?: number;
   /** Name parts must agree at least this well to count as the same name. */
   minNameSimilarity?: number;
+  /** Words needed on a page before its missing fields mean anything. */
+  minWordCount?: number;
+  /** Identifying fields a document must carry to be an income certificate. */
+  minIdentifyingFields?: number;
   /** ELA tamper score at or above which a document is flagged. */
   minTamperScore?: number;
 
@@ -765,6 +770,48 @@ export function deadlineProximity(
 }
 
 
+/**
+ * The uploaded file is legible and is not an income certificate.
+ *
+ * Kept with the pairwise rules rather than in Tier 1b because it is a fact about
+ * THIS application's own document — the applicant chose what to upload — and it
+ * is weighted accordingly. See documentIdentityCheck in certificate.ts for why
+ * this fails only on a clearly-read page and skips on every poor one.
+ */
+export function documentNotACertificate(
+  applications: readonly ScorableApplication[],
+  config: RuleConfig,
+): RuleFinding[] {
+  if (!config.enabled) return [];
+
+  const findings: RuleFinding[] = [];
+
+  for (const app of applications) {
+    const result = documentIdentityCheck(app.certificate ?? null, {
+      minPageConfidence: config.minOcrConfidence ?? 0.8,
+      minWordCount: config.minWordCount ?? 40,
+      minIdentifyingFields: config.minIdentifyingFields ?? 3,
+    });
+    if (result.status !== 'fail') continue;
+
+    findings.push({
+      applicationId: app.id,
+      ruleId: 'DOCUMENT_NOT_A_CERTIFICATE',
+      severity: config.severity,
+      weight: config.weight,
+      reason: result.reason,
+      evidence: {
+        identifyingFieldsFound: result.found,
+        identifyingFieldsExpected: result.expected,
+        pageConfidence: app.certificate?.pageConfidence ?? null,
+        wordCount: app.certificate?.wordCount ?? null,
+      },
+    });
+  }
+
+  return findings;
+}
+
 // ------------------------------------------- Tier 1b: population-level rules
 //
 // Everything above this line compares an application against ONE other thing:
@@ -1191,6 +1238,7 @@ export function evaluateRules(
     ...certificateNumberMismatch(applications, rule('CERTIFICATE_NUMBER_MISMATCH')),
     ...certificateDetailsMismatch(applications, rule('CERTIFICATE_DETAILS_MISMATCH')),
     ...documentTamperSignal(applications, rule('DOCUMENT_TAMPER_SIGNAL')),
+    ...documentNotACertificate(applications, rule('DOCUMENT_NOT_A_CERTIFICATE')),
     ...governmentRecordMismatch(applications, rule('GOVERNMENT_RECORD_MISMATCH')),
   );
 
