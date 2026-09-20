@@ -49,7 +49,12 @@ export async function purgeableDocuments(): Promise<PurgeableRow[]> {
            FROM reviews WHERE application_id = a.id
        ) r ON true
       WHERE d.purged_at IS NULL
-        AND a.status IN ('approved', 'rejected')
+        -- Trashed belongs here with the other terminal states. A binned
+        -- application is the one whose upload there is least reason to keep:
+        -- it is someone else's report, a stray photo, a file that was never
+        -- ours to hold. Leaving it out would have quietly retained forever
+        -- exactly the documents nobody ever wants to look at again.
+        AND a.status IN ('approved', 'rejected', 'trashed')
         AND r.decided_at IS NOT NULL
         AND r.decided_at < now() - ($1 || ' days')::interval
       ORDER BY r.decided_at ASC
