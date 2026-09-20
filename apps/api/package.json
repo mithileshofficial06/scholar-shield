@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:integration:setup": "tsx scripts/setup-test-db.ts",
     "test:watch": "vitest",
     "migrate": "tsx src/migrate.ts",
     "seed": "tsx scripts/seed.ts",

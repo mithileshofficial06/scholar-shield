@@ -61,8 +61,12 @@ jobs:
 
       - run: npm ci
 
-      - name: Apply migrations
-        run: npm run migrate
+      # Creates scholarshield_test and migrates it. The suite refuses to run
+      # against a database whose name does not end in `_test`, because it
+      # truncates between cases -- pointed at a developer's database it
+      # destroys their work, which is not hypothetical.
+      - name: Create and migrate the test database
+        run: npm run test:integration:setup
 
       - name: Run the integration suite
         run: npm run test:integration

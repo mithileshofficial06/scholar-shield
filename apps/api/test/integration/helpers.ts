@@ -27,8 +27,29 @@ export async function requireDatabase(): Promise<void> {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new Error(
-      `The integration suite needs Postgres and could not reach it: ${message}\n` +
-        'Start it with `npm run infra:up` and apply migrations with `npm run migrate`.',
+      `The integration suite needs its own Postgres database and could not reach it: ${message}\n` +
+        'Create it with `npm run test:integration:setup`.',
+    );
+  }
+
+  // THE GUARD THAT MATTERS.
+  //
+  // resetData() truncates. Pointed at a developer's database it truncates the
+  // developer's database, which is exactly what happened the first time this
+  // suite ran after it was written — a seeded corpus someone was working with,
+  // gone, with the tests reporting success.
+  //
+  // vitest.integration.config.ts rewrites the connection string to a `_test`
+  // database before anything reads it. This is the second, independent check
+  // that the rewrite took effect, because the first one is a convention and
+  // conventions are what get overridden in a hurry.
+  const { rows: dbRows } = await query<{ name: string }>('SELECT current_database() AS name');
+  const name = dbRows[0]?.name ?? '(unknown)';
+  if (!name.endsWith('_test')) {
+    throw new Error(
+      `Refusing to run: connected to "${name}", which is not a test database.\n` +
+        'This suite truncates tables. Its database name must end in "_test".\n' +
+        'Run `npm run test:integration:setup`, or set TEST_DATABASE_URL.',
     );
   }
 
@@ -36,7 +57,9 @@ export async function requireDatabase(): Promise<void> {
     `SELECT to_regclass('pipeline_stage_runs') IS NOT NULL AS present`,
   );
   if (!rows[0]?.present) {
-    throw new Error('Migrations have not been applied. Run `npm run migrate`.');
+    throw new Error(
+      `Migrations have not been applied to "${name}". Run: npm run test:integration:setup`,
+    );
   }
 }
 

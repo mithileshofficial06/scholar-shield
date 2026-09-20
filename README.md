@@ -157,14 +157,20 @@ running it inside the API makes request latency a function of how many documents
 are being read at the time.
 
 ```bash
-npm test                   # unit suite — needs nothing running
-npm run test:integration   # pipeline against a real Postgres
-npm run metrics            # regenerates the table above, in place
+npm test                          # unit suite — needs nothing running
+npm run test:integration:setup    # once: creates scholarshield_test
+npm run test:integration          # pipeline against a real Postgres
+npm run metrics                   # regenerates the table above, in place
 ```
 
 The integration suite fails rather than skips when it cannot reach a database.
 A suite that passes because it could not connect is how an unverified claim
 survives a green build.
+
+It also runs against **its own** database and refuses to start anywhere whose
+name does not end in `_test`. It truncates between cases, so pointed at your
+development database it deletes whatever you were working on — which is how
+that guard came to exist.
 
 ## A five-minute walkthrough
 
