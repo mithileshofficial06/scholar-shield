@@ -20,6 +20,11 @@ function SignInForm() {
   const next = params.get('next');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Revealed only once the API says this account has an authenticator. Showing
+  // the field to everyone would tell an attacker which accounts have a second
+  // factor before they have got the password right.
+  const [needsCode, setNeedsCode] = useState(false);
+  const [useRecovery, setUseRecovery] = useState(false);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -27,6 +32,9 @@ function SignInForm() {
     setError(null);
 
     const data = new FormData(event.currentTarget);
+    const code = String(data.get('totpCode') ?? '').trim();
+    const recovery = String(data.get('recoveryCode') ?? '').trim();
+
     const res = await fetch('/api/session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -34,12 +42,22 @@ function SignInForm() {
         mode: 'staff',
         email: String(data.get('email') ?? ''),
         password: String(data.get('password') ?? ''),
+        ...(code === '' ? {} : { totpCode: code }),
+        ...(recovery === '' ? {} : { recoveryCode: recovery }),
       }),
     });
 
     if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { message?: string };
-      setError(body.message ?? 'Sign-in failed.');
+      const body = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
+      if (body.error === 'totp_required') {
+        // First step of a two-step sign-in, not a failure. The password was
+        // right; saying "Sign-in failed" here would be a lie that sends people
+        // to reset a password that works.
+        setNeedsCode(true);
+        setError(null);
+      } else {
+        setError(body.message ?? 'Sign-in failed.');
+      }
       setBusy(false);
       return;
     }
@@ -86,8 +104,51 @@ function SignInForm() {
         />
       </div>
 
+      {needsCode ? (
+        <div className="field">
+          <label className="field-label" htmlFor={useRecovery ? 'recoveryCode' : 'totpCode'}>
+            {useRecovery ? 'Recovery code' : 'Six-digit code'}
+          </label>
+          {useRecovery ? (
+            <input
+              id="recoveryCode"
+              name="recoveryCode"
+              className="input"
+              autoComplete="one-time-code"
+              placeholder="XXXXX-XXXXX"
+              required
+              autoFocus
+            />
+          ) : (
+            <input
+              id="totpCode"
+              name="totpCode"
+              className="input"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              pattern="[0-9\s]*"
+              placeholder="000000"
+              required
+              autoFocus
+            />
+          )}
+          <span className="field-hint">
+            {useRecovery
+              ? 'One of the codes you saved when you set up the authenticator. Each works once.'
+              : 'From your authenticator app.'}{' '}
+            <button
+              type="button"
+              className="auth-link-button"
+              onClick={() => setUseRecovery((previous) => !previous)}
+            >
+              {useRecovery ? 'Use the app instead' : 'Lost your phone?'}
+            </button>
+          </span>
+        </div>
+      ) : null}
+
       <button type="submit" className="btn btn-primary auth-submit" disabled={busy}>
-        {busy ? 'Signing in…' : 'Sign in'}
+        {busy ? 'Signing in…' : needsCode ? 'Verify and sign in' : 'Sign in'}
         {busy ? null : <ArrowIcon />}
       </button>
 

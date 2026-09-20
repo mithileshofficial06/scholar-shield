@@ -53,6 +53,8 @@ The ordering here is deliberate and is the main structural change from earlier d
 
 The one signal that needs no external data, no ML, and no legal ambiguity, and that directly targets the fraud pattern in §1.
 
+> **Tier 1b (rules v4).** Everything in Tier 1 compares an application against *one* other thing — a sibling, a guardian, its own certificate. Fraud that is visible only in the shape of a *population* produces no contradicting pair, so no pairwise rule can reach it. Four rules read a whole cycle at once instead: `INCOME_THRESHOLD_BUNCHING` (threshold gaming, via a density comparison against the band below), `CERTIFICATE_SERIAL_ADJACENCY` (bulk issuance, via serial runs within one office), `IDENTICAL_ROUND_INCOME_CLUSTER` (certificate mills, via a repeated round stock figure) and `HOUSEHOLD_FRAGMENTATION` (deliberate identity fragmentation, via pairs sitting just under the matching threshold on several independent fields). They are weighted below every pairwise rule, none can reach the high-severity threshold alone, and none may satisfy another rule's corroboration requirement — a population signal describes company an applicant did not choose and cannot contest.
+
 1. **Normalize** every application's identity fields — applicant name, guardian names, address, phone, certificate issuing office — into comparable tokens (transliteration-tolerant, honorific-stripped, address abbreviations expanded).
 2. **Entity-resolve** across applications using Postgres `pg_trgm` trigram similarity plus exact-match keys, producing weighted edges between applications that plausibly share a household.
 3. **Component detection** — connected components over that graph are candidate households.
@@ -234,7 +236,7 @@ scholarshield/
 **Auth and personas:**
 
 - **Applicants** — passwordless magic-link, scoped strictly to their own application. No applicant can see a score, a flag, or another application.
-- **Reviewers / Admins** — invite-only accounts, password + optional TOTP, role-based (`reviewer` can decide; `admin` can invite users and edit rule config). Rule-config edits are themselves audit-logged.
+- **Reviewers / Admins** — invite-only accounts, password + optional TOTP (RFC 6238, implemented in `apps/api/src/auth/totp.ts` and checked against the RFC's own published vectors; recovery codes are hashed, the secret is not, and a spent step cannot be replayed), role-based (`reviewer` can decide; `admin` can invite users and edit rule config). Enrolment is a reviewer's own setting at `/security`, never an administrator's, because an admin who could enrol a factor on another account could enrol one they control. Rule-config edits are themselves audit-logged.
 - Risk scores and flags are **never exposed on any applicant-facing endpoint** — enforced at the serializer, not just the UI.
 
 **Core tables:** `users` · `applicants` · `applications` · `documents` · `households` · `household_edges` · `verification_results` · `risk_flags` · `reviews` · `audit_log` · `tips`

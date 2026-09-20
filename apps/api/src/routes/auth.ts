@@ -6,6 +6,16 @@ import { magicLinkMessage, sendMail } from '../mail.js';
 import { query, withTransaction } from '../db.js';
 import { recordAudit } from '../audit.js';
 import { hashPassword, verifyPassword } from '../auth/passwords.js';
+import { requireStaff } from '../auth/middleware.js';
+import {
+  generateRecoveryCode,
+  generateSecret,
+  normalizeRecoveryCode,
+  otpauthUri,
+  RECOVERY_CODE_COUNT,
+  verifyCode,
+} from '../auth/totp.js';
+import { createHash } from 'node:crypto';
 import {
   createMagicLinkToken,
   hashToken,
@@ -35,14 +45,27 @@ const loginLimiter = rateLimit({
 const staffLoginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
+  /** Six digits from an authenticator app, when the account has TOTP enrolled. */
+  totpCode: z.string().trim().optional(),
+  /** One of the codes issued at enrolment, for a lost authenticator. */
+  recoveryCode: z.string().trim().optional(),
 });
 
 interface UserRow {
   id: string;
+  email: string;
   role: UserRole;
   password_hash: string | null;
   password_salt: string | null;
   activated_at: Date | null;
+  totp_secret: string | null;
+  totp_enabled_at: Date | null;
+  totp_last_step: string | null;
+}
+
+/** Recovery codes are hashed like passwords: the server only needs to compare. */
+function hashRecoveryCode(code: string): string {
+  return createHash('sha256').update(normalizeRecoveryCode(code)).digest('hex');
 }
 
 authRouter.post('/staff/login', loginLimiter, async (req, res) => {
@@ -53,7 +76,8 @@ authRouter.post('/staff/login', loginLimiter, async (req, res) => {
   }
 
   const { rows } = await query<UserRow>(
-    `SELECT id, role, password_hash, password_salt, activated_at
+    `SELECT id, email, role, password_hash, password_salt, activated_at,
+            totp_secret, totp_enabled_at, totp_last_step
        FROM users WHERE lower(email) = lower($1)`,
     [parsed.data.email],
   );
@@ -74,6 +98,25 @@ authRouter.post('/staff/login', loginLimiter, async (req, res) => {
     return;
   }
 
+  // The second factor, for accounts that have one. Checked after the password
+  // so that a wrong password and a wrong code are indistinguishable from the
+  // outside: answering "password correct, now the code" to an attacker confirms
+  // the password for them.
+  if (user.totp_enabled_at && user.totp_secret) {
+    const outcome = await verifySecondFactor(user, parsed.data);
+    if (!outcome.ok) {
+      res.status(401).json(
+        outcome.reason === 'missing'
+          ? {
+              error: 'totp_required',
+              message: 'This account uses an authenticator app. Enter the six-digit code.',
+            }
+          : invalid,
+      );
+      return;
+    }
+  }
+
   const token = issueSession({ kind: 'staff', sub: user.id, role: user.role });
   await recordAudit({
     actorId: user.id,
@@ -81,9 +124,276 @@ authRouter.post('/staff/login', loginLimiter, async (req, res) => {
     action: 'staff.login',
     entityType: 'user',
     entityId: user.id,
+    detail: { secondFactor: user.totp_enabled_at ? 'totp' : 'none' },
   });
 
   res.json({ token, role: user.role, expiresInHours: config.SESSION_TTL_HOURS });
+});
+
+/**
+ * Check a TOTP code, or spend a recovery code.
+ *
+ * A recovery code is consumed in the same statement that checks it — `used_at IS
+ * NULL` in the WHERE clause plus RETURNING means two simultaneous attempts
+ * cannot both succeed with one code.
+ */
+async function verifySecondFactor(
+  user: UserRow,
+  input: { totpCode?: string; recoveryCode?: string },
+): Promise<{ ok: boolean; reason?: 'missing' }> {
+  if (input.recoveryCode) {
+    const { rows } = await query<{ id: string }>(
+      `UPDATE totp_recovery_codes
+          SET used_at = now()
+        WHERE user_id = $1 AND code_hash = $2 AND used_at IS NULL
+        RETURNING id`,
+      [user.id, hashRecoveryCode(input.recoveryCode)],
+    );
+    if (rows.length === 0) return { ok: false };
+
+    await recordAudit({
+      actorId: user.id,
+      actorType: 'user',
+      action: 'staff.totp_recovery_used',
+      entityType: 'user',
+      entityId: user.id,
+      detail: { recoveryCodeId: rows[0]!.id },
+    });
+    return { ok: true };
+  }
+
+  if (!input.totpCode) return { ok: false, reason: 'missing' };
+
+  const lastStep = user.totp_last_step === null ? null : Number(user.totp_last_step);
+  const result = verifyCode(user.totp_secret!, input.totpCode, lastStep);
+  if (!result.ok) return { ok: false };
+
+  // Burn the step so the same code cannot be replayed inside its window. The
+  // guard repeats the comparison in SQL because two logins can race here.
+  await query(
+    `UPDATE users SET totp_last_step = $2
+      WHERE id = $1 AND (totp_last_step IS NULL OR totp_last_step < $2)`,
+    [user.id, result.step],
+  );
+  return { ok: true };
+}
+
+
+/* ------------------------------------------------------------------ TOTP */
+
+/**
+ * Begin enrolment: mint a secret and hand back the URI to scan.
+ *
+ * The secret is stored immediately but `totp_enabled_at` stays null, so it gates
+ * nothing yet. An enrolment abandoned at this point leaves a secret nobody uses
+ * and no way to be locked out — which is why confirmation is a separate call.
+ *
+ * Re-enrolling replaces the secret, which is what someone with a new phone
+ * needs. It is refused while TOTP is already on: turning it off first requires
+ * a current code, so a hijacked session cannot quietly swap the second factor
+ * for one the attacker holds.
+ */
+authRouter.post('/totp/enrol', requireStaff(), async (req, res) => {
+  const userId = req.session!.sub;
+
+  const { rows } = await query<{ email: string; totp_enabled_at: Date | null }>(
+    `SELECT email, totp_enabled_at FROM users WHERE id = $1`,
+    [userId],
+  );
+  const user = rows[0];
+  if (!user) {
+    res.status(404).json({ error: 'not_found', message: 'No such user.' });
+    return;
+  }
+  if (user.totp_enabled_at) {
+    res.status(409).json({
+      error: 'already_enrolled',
+      message: 'An authenticator is already set up. Remove it first, which needs a current code.',
+    });
+    return;
+  }
+
+  const secret = generateSecret();
+  await query(`UPDATE users SET totp_secret = $2, totp_last_step = NULL WHERE id = $1`, [
+    userId,
+    secret,
+  ]);
+
+  res.json({
+    secret,
+    otpauthUri: otpauthUri(secret, user.email),
+    message: 'Scan this, then confirm with the six-digit code to turn it on.',
+  });
+});
+
+const confirmSchema = z.object({ code: z.string().trim() });
+
+/**
+ * Finish enrolment, and issue the recovery codes.
+ *
+ * The codes are returned exactly once, here. Only their hashes are stored, so
+ * there is no second chance to read them and no support path that can recover
+ * one — which is the property that makes them worth having.
+ */
+authRouter.post('/totp/confirm', requireStaff(), async (req, res) => {
+  const parsed = confirmSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'invalid_request', message: 'A six-digit code is required.' });
+    return;
+  }
+
+  const userId = req.session!.sub;
+  const { rows } = await query<{ totp_secret: string | null; totp_enabled_at: Date | null }>(
+    `SELECT totp_secret, totp_enabled_at FROM users WHERE id = $1`,
+    [userId],
+  );
+  const user = rows[0];
+
+  if (!user?.totp_secret) {
+    res.status(409).json({ error: 'not_enrolling', message: 'Start enrolment first.' });
+    return;
+  }
+  if (user.totp_enabled_at) {
+    res.status(409).json({ error: 'already_enrolled', message: 'Already turned on.' });
+    return;
+  }
+
+  // Nothing has been spent yet, so any step in the window is acceptable here.
+  const result = verifyCode(user.totp_secret, parsed.data.code, null);
+  if (!result.ok) {
+    res.status(400).json({
+      error: 'invalid_code',
+      message: 'That code did not match. Check your phone’s clock and try the current code.',
+    });
+    return;
+  }
+
+  const codes = Array.from({ length: RECOVERY_CODE_COUNT }, generateRecoveryCode);
+
+  await withTransaction(async (client) => {
+    await client.query(
+      `UPDATE users SET totp_enabled_at = now(), totp_last_step = $2 WHERE id = $1`,
+      [userId, result.step],
+    );
+    // Replaced wholesale rather than appended: codes from an earlier enrolment
+    // belong to a secret that is gone.
+    await client.query(`DELETE FROM totp_recovery_codes WHERE user_id = $1`, [userId]);
+    for (const code of codes) {
+      await client.query(
+        `INSERT INTO totp_recovery_codes (user_id, code_hash) VALUES ($1, $2)`,
+        [userId, hashRecoveryCode(code)],
+      );
+    }
+    await recordAudit(
+      {
+        actorId: userId,
+        actorType: 'user',
+        action: 'staff.totp_enabled',
+        entityType: 'user',
+        entityId: userId,
+        detail: { recoveryCodesIssued: codes.length },
+      },
+      client,
+    );
+  });
+
+  res.json({
+    enabled: true,
+    recoveryCodes: codes,
+    message:
+      'Save these somewhere safe. Each works once if you lose your authenticator, and they are not shown again.',
+  });
+});
+
+const disableSchema = z.object({
+  code: z.string().trim().optional(),
+  recoveryCode: z.string().trim().optional(),
+});
+
+/**
+ * Turn TOTP off.
+ *
+ * Requires a current code or a recovery code even though the caller already
+ * holds a session: a stolen session should not be able to strip the factor that
+ * would have stopped it being useful next time.
+ */
+authRouter.post('/totp/disable', requireStaff(), async (req, res) => {
+  const parsed = disableSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'invalid_request', message: 'A code is required.' });
+    return;
+  }
+
+  const userId = req.session!.sub;
+  const { rows } = await query<UserRow>(
+    `SELECT id, email, role, password_hash, password_salt, activated_at,
+            totp_secret, totp_enabled_at, totp_last_step
+       FROM users WHERE id = $1`,
+    [userId],
+  );
+  const user = rows[0];
+
+  if (!user?.totp_enabled_at || !user.totp_secret) {
+    res.status(409).json({ error: 'not_enrolled', message: 'No authenticator is set up.' });
+    return;
+  }
+
+  const outcome = await verifySecondFactor(user, {
+    totpCode: parsed.data.code,
+    recoveryCode: parsed.data.recoveryCode,
+  });
+  if (!outcome.ok) {
+    res.status(401).json({ error: 'invalid_code', message: 'That code did not match.' });
+    return;
+  }
+
+  await withTransaction(async (client) => {
+    await client.query(
+      `UPDATE users
+          SET totp_secret = NULL, totp_enabled_at = NULL, totp_last_step = NULL
+        WHERE id = $1`,
+      [userId],
+    );
+    await client.query(`DELETE FROM totp_recovery_codes WHERE user_id = $1`, [userId]);
+    await recordAudit(
+      {
+        actorId: userId,
+        actorType: 'user',
+        action: 'staff.totp_disabled',
+        entityType: 'user',
+        entityId: userId,
+      },
+      client,
+    );
+  });
+
+  res.json({ enabled: false });
+});
+
+/** Whether this account has TOTP on, and how many recovery codes are left. */
+authRouter.get('/totp/status', requireStaff(), async (req, res) => {
+  const userId = req.session!.sub;
+
+  const [user, codes] = await Promise.all([
+    query<{ totp_enabled_at: Date | null; totp_secret: string | null }>(
+      `SELECT totp_enabled_at, totp_secret FROM users WHERE id = $1`,
+      [userId],
+    ),
+    query<{ remaining: string }>(
+      `SELECT count(*)::text AS remaining
+         FROM totp_recovery_codes WHERE user_id = $1 AND used_at IS NULL`,
+      [userId],
+    ),
+  ]);
+
+  const row = user.rows[0];
+  res.json({
+    enabled: row?.totp_enabled_at !== null && row?.totp_enabled_at !== undefined,
+    // An enrolment that was started and never confirmed, so the UI can offer to
+    // resume rather than reporting "off" and minting a third secret.
+    pending: Boolean(row?.totp_secret) && !row?.totp_enabled_at,
+    recoveryCodesRemaining: Number(codes.rows[0]?.remaining ?? 0),
+  });
 });
 
 // ---------------------------------------------------------------- applicant magic link

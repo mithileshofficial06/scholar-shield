@@ -9,7 +9,10 @@ const PUBLIC = [
   { href: '/tip', label: 'Report a concern' },
 ];
 
-const STAFF = [{ href: '/dashboard', label: 'Queue' }];
+const STAFF = [
+  { href: '/dashboard', label: 'Queue' },
+  { href: '/security', label: 'Security' },
+];
 const ADMIN = [{ href: '/admin', label: 'Admin' }];
 
 /**
