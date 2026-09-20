@@ -29,7 +29,7 @@ import type { ApplicationChecklist } from '@scholarshield/shared';
 import { certificateIncomeFrom, type CertificateEvidence } from './certificate.js';
 import { buildChecklist, type ChecklistFlag, type StageRun } from './checklist.js';
 import { normalizeIdentity } from './normalize.js';
-import { linkedPairs, type MatchField, type ResolutionInput } from './resolve.js';
+import { linkedPairs, resolveAll, type MatchField, type ResolutionInput } from './resolve.js';
 import { evaluateRules, type ScorableApplication } from './rules.js';
 
 // ------------------------------------------------- 4. Household reconcile
@@ -362,9 +362,13 @@ export async function scoreApplications(
   const rows = await ensureNormalized(await applicationsInCycle(cycle));
 
   const inputs = rows.map(toResolutionInput);
+  // Every scored pair, not only the ones that linked. Components are built from
+  // the linked subset as before; HOUSEHOLD_FRAGMENTATION needs the rest, since
+  // the pairs that just failed to link are exactly what it looks at.
+  const pairs = resolveAll(inputs);
   const components = detectComponents(
     rows.map((row) => row.id),
-    linkedPairs(inputs),
+    pairs.filter((pair) => pair.linked),
     { rejectedEdgeKeys: await loadRejectedEdgeKeys() },
   );
 
@@ -376,6 +380,7 @@ export async function scoreApplications(
     components,
     rulesConfig,
     config.CYCLE_DEADLINE,
+    pairs,
   );
 
   const findingsByApplication = new Map<string, typeof evaluation.findings>();

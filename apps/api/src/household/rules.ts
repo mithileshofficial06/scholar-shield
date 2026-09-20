@@ -24,6 +24,7 @@ import {
   type ComparisonOptions,
 } from './certificate.js';
 import type { HouseholdComponent } from './components.js';
+import { LINK_THRESHOLD, type PairResolution } from './resolve.js';
 
 export type Severity = 'low' | 'medium' | 'high';
 
@@ -42,6 +43,22 @@ export interface RuleConfig {
   minNameSimilarity?: number;
   /** ELA tamper score at or above which a document is flagged. */
   minTamperScore?: number;
+
+  // --- population-level rules (Tier 1b) ---
+  /** Width of the band below the ceiling, as a percentage of the ceiling. */
+  bunchingBandPercent?: number;
+  /** Applications needed inside the band before density is even considered. */
+  minBandCount?: number;
+  /** How many times denser the band must be than the band below it. */
+  bunchingRatio?: number;
+  /** Widest serial-number span still counted as one issuance run. */
+  maxSerialSpan?: number;
+  /** An income is "round" when divisible by this. */
+  roundIncomeStep?: number;
+  /** Resolution score below which a pair is unrelated rather than a near miss. */
+  nearMissFloor?: number;
+  /** Independent fields that must near-miss together before it means anything. */
+  minNearMissFields?: number;
 }
 
 export interface RulesConfig {
@@ -747,7 +764,363 @@ export function deadlineProximity(
   return findings;
 }
 
+
+// ------------------------------------------- Tier 1b: population-level rules
+//
+// Everything above this line compares an application against ONE other thing:
+// a sibling, a guardian, its own certificate. That shape has a blind spot no
+// amount of tuning fixes — a fraud visible only in the SHAPE OF A POPULATION
+// produces no contradicting pair, so no pairwise rule can reach it.
+//
+// The four rules below read a whole cycle at once. Each is derived from a fraud
+// mechanism named in PROJECT_REPORT.md §1 — threshold gaming, bulk issuance,
+// certificate mills, deliberate identity fragmentation — and not from any
+// observed miss. db/seed/README-holdout.md explains why that distinction is
+// load-bearing rather than pedantic.
+//
+// They are weighted BELOW the pairwise rules deliberately. A pairwise rule points
+// at a contradiction the applicant themselves produced. These point at the
+// company an applicant keeps, which an honest applicant neither chooses nor can
+// contest. None may reach highSeverityScoreThreshold alone.
+
+/** The digits at the tail of a serial: `TN-CHN-2025-204471` -> prefix TNCHN, 204471. */
+function serialTail(certificateId: string | null): { prefix: string; value: number } | null {
+  if (!certificateId) return null;
+  const match = /^(.*?)(\d+)\s*$/.exec(certificateId.trim().toUpperCase());
+  if (!match) return null;
+  const value = Number.parseInt(match[2]!, 10);
+  if (!Number.isFinite(value)) return null;
+  return { prefix: match[1]!.replace(/[^A-Z]/g, ''), value };
+}
+
+/**
+ * Declared incomes bunching in a narrow band just under the eligibility ceiling.
+ *
+ * THE MECHANISM
+ * -------------
+ * Eligibility is a cliff: at the ceiling you qualify, one rupee over you do not.
+ * A figure invented to qualify gets placed just under that cliff, because a
+ * fabricator wants the largest income the rule still allows. Real incomes do not
+ * know where the cliff is, so a genuine population thins out smoothly as it
+ * approaches the ceiling. A spike in the last few percent below the line is the
+ * fingerprint of figures chosen rather than earned.
+ *
+ * This is the bunching estimator from public economics — the test applied to
+ * tax-bracket and means-test data — narrowed to one admission cycle.
+ *
+ * WHY IT IS WEIGHTED LOWEST, AND FLAGS A BAND RATHER THAN A PERSON
+ * ----------------------------------------------------------------
+ * Some households genuinely earn just under the line. Being near it is not
+ * misconduct, and "other people declared what you declared" is not something an
+ * applicant can answer. So the rule fires only when the band is anomalously dense
+ * against the band below it — the comparison is the evidence, not the position —
+ * and carries the lowest weight in the set.
+ */
+export function incomeThresholdBunching(
+  applications: readonly ScorableApplication[],
+  config: RuleConfig,
+  ceiling: number,
+): RuleFinding[] {
+  if (!config.enabled || ceiling <= 0) return [];
+
+  const bandPercent = config.bunchingBandPercent ?? 8;
+  const minCount = config.minBandCount ?? 4;
+  const ratio = config.bunchingRatio ?? 2.5;
+
+  const bandWidth = (ceiling * bandPercent) / 100;
+  const bandFloor = ceiling - bandWidth;
+  // The equal-width band immediately below, standing in as the counterfactual.
+  const referenceFloor = bandFloor - bandWidth;
+
+  const inBand = applications.filter(
+    (a) => a.declaredAnnualIncome > bandFloor && a.declaredAnnualIncome <= ceiling,
+  );
+  const inReference = applications.filter(
+    (a) => a.declaredAnnualIncome > referenceFloor && a.declaredAnnualIncome <= bandFloor,
+  );
+
+  if (inBand.length < minCount) return [];
+  // max(...,1): against an empty reference band any occupancy is infinitely
+  // dense, which would fire on a small cycle where the band below simply has
+  // nobody in it.
+  if (inBand.length < ratio * Math.max(inReference.length, 1)) return [];
+
+  const observedRatio = (inBand.length / Math.max(inReference.length, 1)).toFixed(1);
+
+  return inBand.map((app) => ({
+    applicationId: app.id,
+    ruleId: 'INCOME_THRESHOLD_BUNCHING',
+    severity: config.severity,
+    weight: config.weight,
+    reason:
+      `This application declares ${money(app.declaredAnnualIncome)}, inside the ${bandPercent}% band just ` +
+      `below the ${money(ceiling)} eligibility ceiling. ${inBand.length} applications this cycle sit in that ` +
+      `band against ${inReference.length} in the equally wide band beneath it — ${observedRatio}x the density. ` +
+      `A population of real incomes thins out towards a ceiling it cannot see; a cluster pressed against the ` +
+      `line is the shape of figures picked to qualify. This describes the group, not this applicant, who may ` +
+      `simply earn what they say.`,
+    evidence: {
+      declaredAnnualIncome: app.declaredAnnualIncome,
+      ceiling,
+      bandFloor,
+      bandCount: inBand.length,
+      referenceBandCount: inReference.length,
+      densityRatio: Number(observedRatio),
+    },
+  }));
+}
+
+/**
+ * Near-consecutive certificate serials issued by one office to unrelated households.
+ *
+ * THE MECHANISM
+ * -------------
+ * An office issues serials in order as people walk in. Genuine applicants from one
+ * taluk therefore hold numbers scattered across a whole year of issuance. A block
+ * of certificates obtained in one transaction — bulk issuance, the certificate
+ * mill — carries a tight run, because they were printed back to back.
+ *
+ * Same household is excluded. Siblings who went to the office together legitimately
+ * walk out with consecutive numbers, and that is much the likeliest innocent
+ * explanation for adjacency.
+ */
+export function certificateSerialAdjacency(
+  applications: readonly ScorableApplication[],
+  householdOf: ReadonlyMap<string, string>,
+  config: RuleConfig,
+): RuleFinding[] {
+  if (!config.enabled) return [];
+
+  const maxSpan = config.maxSerialSpan ?? 12;
+  const minRun = config.minDistinctHouseholds ?? 3;
+
+  // Keyed by office AND serial prefix: two offices sharing a numbering series
+  // would otherwise look adjacent while being entirely unrelated.
+  const bySeries = new Map<string, { app: ScorableApplication; serial: number }[]>();
+  for (const app of applications) {
+    const parsed = serialTail(app.certificateId);
+    if (!parsed || !app.issuingOffice) continue;
+    const key = `${app.issuingOffice.trim().toLowerCase()}::${parsed.prefix}`;
+    const bucket = bySeries.get(key) ?? [];
+    bucket.push({ app, serial: parsed.value });
+    bySeries.set(key, bucket);
+  }
+
+  const findings: RuleFinding[] = [];
+
+  for (const [key, entries] of bySeries) {
+    if (entries.length < minRun) continue;
+    entries.sort((a, b) => a.serial - b.serial);
+
+    // Sliding window over the sorted serials, reported at its widest.
+    let start = 0;
+    for (let end = 0; end < entries.length; end += 1) {
+      while (entries[end]!.serial - entries[start]!.serial > maxSpan) start += 1;
+
+      const nextStillFits =
+        end + 1 < entries.length && entries[end + 1]!.serial - entries[start]!.serial <= maxSpan;
+      if (nextStillFits) continue;
+
+      const window = entries.slice(start, end + 1);
+      const households = new Set(window.map((e) => householdOf.get(e.app.id) ?? e.app.id));
+      if (households.size < minRun) continue;
+
+      const span = window[window.length - 1]!.serial - window[0]!.serial;
+      const office = window[0]!.app.issuingOffice;
+
+      for (const entry of window) {
+        findings.push({
+          applicationId: entry.app.id,
+          ruleId: 'CERTIFICATE_SERIAL_ADJACENCY',
+          severity: config.severity,
+          weight: config.weight,
+          reason:
+            `This certificate's serial (${entry.app.certificateId}) falls in a run of ${window.length} ` +
+            `certificates from ${office} spanning just ${span} numbers, held by ${households.size} unrelated ` +
+            `households applying to the same cycle. An office issues serials in order as applicants arrive, ` +
+            `so genuine certificates from one office spread across a year of issuance. A tight run across ` +
+            `unrelated families is what a block issued in one sitting looks like.`,
+          evidence: {
+            certificateId: entry.app.certificateId,
+            issuingOffice: office,
+            serialRunLength: window.length,
+            serialSpan: span,
+            distinctHouseholds: households.size,
+            seriesKey: key,
+          },
+        });
+      }
+    }
+  }
+
+  return findings;
+}
+
+/**
+ * One income figure, repeated exactly across unrelated households from one office.
+ *
+ * THE MECHANISM
+ * -------------
+ * A certificate mill does not assess an income per family. It reuses a stock
+ * figure that clears the means test, and that figure is almost always round.
+ * Incomes from unrelated households scatter, because they are wages rather than
+ * a template.
+ *
+ * All three signatures are required together, because each alone is innocent:
+ * incomes ARE often rounded, families DO share an office, and two households CAN
+ * coincide on a figure. Identical AND round AND clustered at one office is the
+ * combination a payroll does not produce.
+ */
+export function identicalRoundIncomeCluster(
+  applications: readonly ScorableApplication[],
+  householdOf: ReadonlyMap<string, string>,
+  config: RuleConfig,
+): RuleFinding[] {
+  if (!config.enabled) return [];
+
+  const step = config.roundIncomeStep ?? 10_000;
+  const minHouseholds = config.minDistinctHouseholds ?? 3;
+
+  const groups = new Map<string, ScorableApplication[]>();
+  for (const app of applications) {
+    if (!app.issuingOffice) continue;
+    if (app.declaredAnnualIncome <= 0) continue;
+    if (app.declaredAnnualIncome % step !== 0) continue;
+    const key = `${app.issuingOffice.trim().toLowerCase()}::${app.declaredAnnualIncome}`;
+    const bucket = groups.get(key) ?? [];
+    bucket.push(app);
+    groups.set(key, bucket);
+  }
+
+  const findings: RuleFinding[] = [];
+
+  for (const members of groups.values()) {
+    const households = new Set(members.map((a) => householdOf.get(a.id) ?? a.id));
+    if (households.size < minHouseholds) continue;
+
+    const value = members[0]!.declaredAnnualIncome;
+    const office = members[0]!.issuingOffice;
+
+    for (const app of members) {
+      findings.push({
+        applicationId: app.id,
+        ruleId: 'IDENTICAL_ROUND_INCOME_CLUSTER',
+        severity: config.severity,
+        weight: config.weight,
+        reason:
+          `${households.size} unrelated households holding certificates from ${office} all declare exactly ` +
+          `${money(value)} — round to the nearest ${money(step)}. Wages from unrelated families scatter; one ` +
+          `office issuing one repeated round figure is the signature of a stock number rather than an assessed ` +
+          `income. Worth checking the certificates in this group together, since no single one looks wrong alone.`,
+        evidence: {
+          declaredAnnualIncome: value,
+          issuingOffice: office,
+          distinctHouseholds: households.size,
+          roundingStep: step,
+          peerApplicationIds: members.filter((m) => m.id !== app.id).map((m) => m.id),
+        },
+      });
+    }
+  }
+
+  return findings;
+}
+
+/**
+ * Pairs sitting deliberately just under the household-matching bar.
+ *
+ * THE MECHANISM
+ * -------------
+ * Someone who knows applications are cross-matched fragments an identity: vary the
+ * spelling of the guardian's name, move the address one street over, change the
+ * handset. Each field is altered just enough to fall under its own threshold, so
+ * the pair never merges and no household rule ever compares the two.
+ *
+ * That evasion leaves a shape of its own. An unrelated pair scores near zero on
+ * everything, because a stranger's name and address are not nearly yours. A genuine
+ * household clears the bar. The gap between the two — close on SEVERAL independent
+ * fields at once and over the line on none — is not where honest data lands. It is
+ * where data lands that was edited until it stopped matching.
+ *
+ * Requiring two independent fields is the whole precision story. One near miss is
+ * two people in a district sharing a common name, which is ordinary in exactly the
+ * naming conventions PROJECT_REPORT.md §6 warns about.
+ */
+export function householdFragmentation(
+  pairs: readonly PairResolution[],
+  byId: ReadonlyMap<string, ScorableApplication>,
+  config: RuleConfig,
+): RuleFinding[] {
+  if (!config.enabled) return [];
+
+  const floor = config.nearMissFloor ?? 0.38;
+  const minFields = config.minNearMissFields ?? 2;
+  const findings: RuleFinding[] = [];
+  const reported = new Set<string>();
+
+  for (const pair of pairs) {
+    if (pair.linked) continue;
+    if (pair.score < floor || pair.score >= LINK_THRESHOLD) continue;
+    if (pair.edges.length < minFields) continue;
+
+    const a = byId.get(pair.applicationAId);
+    const b = byId.get(pair.applicationBId);
+    if (!a || !b) continue;
+
+    const fields = pair.edges
+      .map((e) => `${e.matchField.replace(/_/g, ' ')} ${Math.round(e.similarity * 100)}%`)
+      .join(', ');
+
+    for (const [self, other] of [
+      [a, b],
+      [b, a],
+    ] as const) {
+      const key = `${self.id}::${other.id}`;
+      if (reported.has(key)) continue;
+      reported.add(key);
+
+      findings.push({
+        applicationId: self.id,
+        ruleId: 'HOUSEHOLD_FRAGMENTATION',
+        severity: config.severity,
+        weight: config.weight,
+        reason:
+          `This application and ${other.applicantName}'s resolve to ${pair.score.toFixed(2)} against the ` +
+          `${LINK_THRESHOLD} needed to be treated as one household — close on ${pair.edges.length} independent ` +
+          `fields (${fields}) and over the line on none, so no household rule ever compared them. Unrelated ` +
+          `applications do not usually land here: a stranger matches on nothing. Sitting just under the bar on ` +
+          `several fields at once is what an identity edited until it stops matching looks like — though two ` +
+          `common names in one district produce it honestly too.`,
+        evidence: {
+          resolutionScore: pair.score,
+          linkThreshold: LINK_THRESHOLD,
+          otherApplicationId: other.id,
+          otherApplicantName: other.applicantName,
+          nearMissFields: pair.edges.map((e) => ({
+            field: e.matchField,
+            similarity: e.similarity,
+          })),
+        },
+      });
+    }
+  }
+
+  return findings;
+}
+
 // ---------------------------------------------------------------- orchestration
+
+/**
+ * The Tier 1b rule ids, named once so the corroboration pass below and any
+ * future caller agree on what counts as a population signal rather than a fact
+ * about one application.
+ */
+export const POPULATION_RULES: ReadonlySet<string> = new Set([
+  'INCOME_THRESHOLD_BUNCHING',
+  'CERTIFICATE_SERIAL_ADJACENCY',
+  'IDENTICAL_ROUND_INCOME_CLUSTER',
+  'HOUSEHOLD_FRAGMENTATION',
+]);
 
 export interface EvaluationResult {
   findings: RuleFinding[];
@@ -768,6 +1141,12 @@ export function evaluateRules(
   components: readonly HouseholdComponent[],
   config: RulesConfig,
   cycleDeadline: string,
+  /**
+   * Every scored pair, linked or not. HOUSEHOLD_FRAGMENTATION is the only rule
+   * that reads the ones that did NOT link, so it is the only reason this is
+   * here; callers with no resolver output pass nothing and lose just that rule.
+   */
+  pairs: readonly PairResolution[] = [],
 ): EvaluationResult {
   const byId = new Map(applications.map((a) => [a.id, a]));
   const householdOf = new Map<string, string>();
@@ -815,9 +1194,39 @@ export function evaluateRules(
     ...governmentRecordMismatch(applications, rule('GOVERNMENT_RECORD_MISMATCH')),
   );
 
+  // Tier 1b. Population-level, so they run once over the whole cycle rather
+  // than per component — a cycle is the smallest set in which any of these
+  // shapes exists at all.
+  findings.push(
+    ...incomeThresholdBunching(
+      applications,
+      rule('INCOME_THRESHOLD_BUNCHING'),
+      config.scholarshipIncomeCeiling,
+    ),
+    ...certificateSerialAdjacency(
+      applications,
+      householdOf,
+      rule('CERTIFICATE_SERIAL_ADJACENCY'),
+    ),
+    ...identicalRoundIncomeCluster(
+      applications,
+      householdOf,
+      rule('IDENTICAL_ROUND_INCOME_CLUSTER'),
+    ),
+    ...householdFragmentation(pairs, byId, rule('HOUSEHOLD_FRAGMENTATION')),
+  );
+
   // Corroboration pass: a rule marked requiresCorroboration is dropped unless the
   // same application already carries a finding from some other rule.
-  const corroborated = new Set(findings.map((f) => f.applicationId));
+  //
+  // Tier 1b findings do NOT corroborate. They describe a population an applicant
+  // did not choose to belong to, and letting one satisfy another weak rule's
+  // corroboration requirement would let two things that are individually not
+  // evidence combine into something that looks like it. Corroboration has to
+  // mean a second fact about THIS application.
+  const corroborated = new Set(
+    findings.filter((f) => !POPULATION_RULES.has(f.ruleId)).map((f) => f.applicationId),
+  );
 
   const proximityConfig = rule('DEADLINE_PROXIMITY');
   for (const finding of deadlineProximity(applications, proximityConfig, cycleDeadline)) {

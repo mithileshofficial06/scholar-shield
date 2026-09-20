@@ -1,0 +1,146 @@
+{
+  "version": "v4",
+  "description": "ScholarShield contradiction rule weights. Stamped onto every risk_flags row so a historical score stays reproducible against the config that produced it. Never edit in place after flags exist — add a new version. v4 = v3 plus four population-level (Tier 1b) rules that read a whole cycle at once instead of comparing pairs; no v3 rule changed. Every Tier 1b weight sits below highSeverityScoreThreshold (50) so none can carry an application into high severity alone, and none may satisfy DEADLINE_PROXIMITY's corroboration requirement.",
+  "scholarshipIncomeCeiling": 250000,
+  "highSeverityScoreThreshold": 50,
+  "rules": {
+    "SIBLING_INCOME_CONTRADICTION": {
+      "enabled": true,
+      "severity": "high",
+      "weight": 40,
+      "incomeTolerancePercent": 15,
+      "incomeToleranceAbsolute": 12000,
+      "note": "Both tolerances must be exceeded. Certificates issued months apart legitimately differ a little, and a percentage alone fires on small absolute gaps between low incomes — precisely the applicants least able to contest a flag."
+    },
+    "GUARDIAN_INCOME_CONTRADICTION": {
+      "enabled": true,
+      "severity": "high",
+      "weight": 35,
+      "incomeTolerancePercent": 15,
+      "incomeToleranceAbsolute": 12000,
+      "note": "Same guardian, different households. Catches the case where household resolution failed but the guardian name is identical. Within one household SIBLING_INCOME_CONTRADICTION already covers it, so this rule skips same-household pairs to avoid double-counting."
+    },
+    "ADDRESS_CLUSTER_UNRELATED": {
+      "enabled": true,
+      "severity": "medium",
+      "weight": 20,
+      "minDistinctHouseholds": 3,
+      "note": "Medium, not high. Joint families, tenements, and migrant-labour housing put many genuinely low-income families at one address — the equity cases named in PROJECT_REPORT.md §6."
+    },
+    "ISSUING_OFFICE_MISMATCH": {
+      "enabled": true,
+      "severity": "low",
+      "weight": 8,
+      "note": "Weak on its own. A family that moved between certificate applications legitimately uses two offices."
+    },
+    "DUPLICATE_CERTIFICATE_ID": {
+      "enabled": true,
+      "severity": "high",
+      "weight": 45,
+      "note": "No tolerance needed — a certificate serial number either matches exactly or it doesn't. Highest weight in the set: reuse of one certificate across applications is closer to direct evidence than an inference from declared figures."
+    },
+    "FAMILY_SIZE_CONTRADICTION": {
+      "enabled": true,
+      "severity": "medium",
+      "weight": 18,
+      "note": "Medium, not high. A family size recorded a year apart can genuinely change (a marriage, a death, a sibling moving out); disagreement is a prompt to check the certificates, not proof either one lies."
+    },
+    "SHARED_CONTACT_UNRELATED_HOUSEHOLDS": {
+      "enabled": true,
+      "severity": "medium",
+      "weight": 22,
+      "note": "Medium: a shared landline or a relative's number lent for contact purposes happens legitimately. Weighted above ADDRESS_CLUSTER_UNRELATED because a phone number is harder to share incidentally than a street address."
+    },
+    "DEADLINE_PROXIMITY": {
+      "enabled": true,
+      "severity": "low",
+      "weight": 6,
+      "windowDays": 14,
+      "requiresCorroboration": true,
+      "note": "Never fires alone. Siblings applying in the same admission cycle obtain certificates days apart, which is normal and not evidence of anything. Only contributes once another Tier 1 rule has already fired on the same application."
+    },
+    "DECLARED_INCOME_BELOW_CERTIFICATE": {
+      "enabled": true,
+      "severity": "high",
+      "weight": 45,
+      "incomeTolerancePercent": 15,
+      "incomeToleranceAbsolute": 12000,
+      "minOcrConfidence": 0.8,
+      "note": "The applicant's own certificate, read by OCR, shows materially more than the form declares. Needs no second application, so it covers an applicant filing alone. Only understatement fires: overstating works against the applicant. Weighted with DUPLICATE_CERTIFICATE_ID as the closest thing to direct evidence, but gated on OCR confidence and the same two-part tolerance, because a misread digit on an honest certificate would otherwise land at the top of the queue."
+    },
+    "CERTIFICATE_HOLDER_MISMATCH": {
+      "enabled": true,
+      "severity": "high",
+      "weight": 40,
+      "minOcrConfidence": 0.8,
+      "minNameSimilarity": 0.25,
+      "note": "The certificate names a different applicant or guardian than the form: the signature of someone else's certificate uploaded as one's own. Names are compared with household resolution's matcher plus a vowel-insensitive skeleton; 0.25 sits in the measured gap between the same person spelled differently (0.30+) and different people (0.20-), and a name OCR read below the confidence floor is skipped, never failed. Measured on the synthetic corpus with honest forms: 0 false fails on 65 untampered certificates."
+    },
+    "CERTIFICATE_NUMBER_MISMATCH": {
+      "enabled": true,
+      "severity": "high",
+      "weight": 30,
+      "minOcrConfidence": 0.8,
+      "note": "The uploaded certificate is not the one whose number the applicant typed — and the typed number is what the manual verification link checks. Exact match after stripping formatting: a serial number cannot be nearly right. OCR reads the certificate number least reliably of any field: on the corpus it cleared the confidence floor on 44 of 65 documents, so this check is skipped on about a third."
+    },
+    "CERTIFICATE_INCOME_WORDS_MISMATCH": {
+      "enabled": true,
+      "severity": "high",
+      "weight": 30,
+      "minOcrConfidence": 0.8,
+      "note": "The income in figures and in words disagree on the certificate itself — an edit to one line that missed the other. Both lines must be read at 0.8 confidence or better. Measured on the synthetic corpus: 0 false fails on 65 untampered certificates. Its catch rate is unmeasured: the corpus forger repaints both lines consistently, which this check cannot see by design."
+    },
+    "CERTIFICATE_DETAILS_MISMATCH": {
+      "enabled": true,
+      "severity": "medium",
+      "weight": 15,
+      "minOcrConfidence": 0.8,
+      "note": "District, PIN code or family size on the certificate disagree with the form. Medium: a family that moved, or grew, since the certificate was issued produces exactly this legitimately."
+    },
+    "DOCUMENT_TAMPER_SIGNAL": {
+      "enabled": true,
+      "severity": "medium",
+      "weight": 15,
+      "note": "The file's metadata names an image or PDF editor. Error level analysis is NOT scored: no minTamperScore is set, because on the synthetic corpus ELA separated 22 tampered certificates from their matched controls no better than chance (AUC 0.50) and at 0.5 flagged 9 of 43 genuine ones while catching 1 tampered. Set minTamperScore in a later version only once it is shown to work. Weighted below highSeverityScoreThreshold either way (PROJECT_REPORT.md §5 Tier 2)."
+    },
+    "GOVERNMENT_RECORD_MISMATCH": {
+      "enabled": true,
+      "severity": "high",
+      "weight": 50,
+      "note": "A reviewer checked the state portal and recorded that the certificate does not match the government record. The only input a human has confirmed, so the heaviest weight — and still only a queue position; the reviewer decides."
+    },
+    "INCOME_THRESHOLD_BUNCHING": {
+      "enabled": true,
+      "severity": "low",
+      "weight": 10,
+      "bunchingBandPercent": 8,
+      "minBandCount": 4,
+      "bunchingRatio": 2.5,
+      "note": "Threshold gaming. Declared incomes bunching just under the eligibility cliff far denser than the band below it — the bunching estimator from public economics, narrowed to one cycle. Lowest weight in the set and low severity on purpose: some households genuinely earn just under the line, being near it is not misconduct, and “other people declared what you declared” is not something an applicant can answer. It fires on a density comparison, never on position alone."
+    },
+    "CERTIFICATE_SERIAL_ADJACENCY": {
+      "enabled": true,
+      "severity": "medium",
+      "weight": 25,
+      "maxSerialSpan": 12,
+      "minDistinctHouseholds": 3,
+      "note": "Bulk issuance. An office issues serials in order as applicants arrive, so genuine certificates from one office spread across a year of issuance; a tight run held by unrelated households applying to one cycle is what a block printed in a single sitting looks like. Same-household pairs are excluded because siblings visiting the office together legitimately get consecutive numbers — much the likeliest innocent explanation. Keyed on office AND serial prefix, so two offices sharing a series are never compared."
+    },
+    "IDENTICAL_ROUND_INCOME_CLUSTER": {
+      "enabled": true,
+      "severity": "medium",
+      "weight": 22,
+      "roundIncomeStep": 10000,
+      "minDistinctHouseholds": 3,
+      "note": "Certificate mill. Requires identical AND round AND clustered at one issuing office together, because each alone is innocent: incomes are often rounded, families do share an office, and two households can coincide on a figure. Medium rather than high — a district office serving a genuinely poor area can produce this honestly, which is why the reason string points the reviewer at the group rather than the individual."
+    },
+    "HOUSEHOLD_FRAGMENTATION": {
+      "enabled": true,
+      "severity": "medium",
+      "weight": 28,
+      "nearMissFloor": 0.38,
+      "minNearMissFields": 2,
+      "note": "Deliberate identity fragmentation. Pairs scoring between 0.38 and the 0.55 link threshold on two or more independent fields: close on several axes, over the line on none, so no household rule ever compared them. Unrelated applications score near zero on everything, so this band is not where honest data lands. Requiring two independent fields is the precision story — one near miss is two people in a district sharing a common name, which PROJECT_REPORT.md §6 warns is ordinary in these naming conventions."
+    }
+  }
+}

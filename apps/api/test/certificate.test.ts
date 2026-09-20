@@ -9,8 +9,8 @@ import {
 } from '../src/household/certificate.js';
 import { buildChecklist, type ChecklistInput } from '../src/household/checklist.js';
 import { detectComponents } from '../src/household/components.js';
-import { loadRulesConfig } from '../src/household/config.js';
-import { evaluateRules, type ScorableApplication } from '../src/household/rules.js';
+import { ACTIVE_RULES_VERSION, loadRulesConfig } from '../src/household/config.js';
+import { evaluateRules, POPULATION_RULES, type ScorableApplication } from '../src/household/rules.js';
 
 const config = loadRulesConfig();
 const DEADLINE = '2026-07-31';
@@ -69,10 +69,15 @@ const fired = (apps: ScorableApplication[], id = 'a') =>
   evaluate(apps).findings.filter((f) => f.applicationId === id).map((f) => f.ruleId);
 
 describe('rule config v3', () => {
+  // Pinned to v3 explicitly. These assertions are about what v3 *is*; reading
+  // the active version here would turn a published config into a moving target
+  // and quietly stop testing the thing it names.
+  const v3 = loadRulesConfig('v3');
+
   it('carries every v2 rule unchanged and adds exactly the six certificate checks', () => {
     const v2 = loadRulesConfig('v2');
-    for (const [id, rule] of Object.entries(v2.rules)) expect(config.rules[id]).toEqual(rule);
-    expect(Object.keys(config.rules).filter((id) => !(id in v2.rules)).sort()).toEqual([
+    for (const [id, rule] of Object.entries(v2.rules)) expect(v3.rules[id]).toEqual(rule);
+    expect(Object.keys(v3.rules).filter((id) => !(id in v2.rules)).sort()).toEqual([
       'CERTIFICATE_DETAILS_MISMATCH',
       'CERTIFICATE_HOLDER_MISMATCH',
       'CERTIFICATE_INCOME_WORDS_MISMATCH',
@@ -83,7 +88,38 @@ describe('rule config v3', () => {
   });
 
   it('keeps the tamper signal below the high-severity band on its own', () => {
-    expect(config.rules.DOCUMENT_TAMPER_SIGNAL!.weight).toBeLessThan(config.highSeverityScoreThreshold);
+    expect(v3.rules.DOCUMENT_TAMPER_SIGNAL!.weight).toBeLessThan(v3.highSeverityScoreThreshold);
+  });
+});
+
+describe('rule config v4', () => {
+  const v3 = loadRulesConfig('v3');
+  const v4 = loadRulesConfig('v4');
+
+  it('carries every v3 rule unchanged and adds exactly the four population rules', () => {
+    for (const [id, rule] of Object.entries(v3.rules)) expect(v4.rules[id]).toEqual(rule);
+    expect(Object.keys(v4.rules).filter((id) => !(id in v3.rules)).sort()).toEqual([
+      'CERTIFICATE_SERIAL_ADJACENCY',
+      'HOUSEHOLD_FRAGMENTATION',
+      'IDENTICAL_ROUND_INCOME_CLUSTER',
+      'INCOME_THRESHOLD_BUNCHING',
+    ]);
+  });
+
+  // The promise Tier 1b makes. A population signal describes company an
+  // applicant keeps rather than anything they did, so no one of them may be
+  // able to carry an application into the high-severity band by itself. If a
+  // later version raises a weight past this line, that is a decision someone
+  // should have to make deliberately, not a number that drifted.
+  it('keeps every population rule below the high-severity band on its own', () => {
+    for (const ruleId of POPULATION_RULES) {
+      expect(v4.rules[ruleId]!.weight).toBeLessThan(v4.highSeverityScoreThreshold);
+    }
+  });
+
+  it('is the version the engine scores under', () => {
+    expect(ACTIVE_RULES_VERSION).toBe('v4');
+    expect(config.version).toBe('v4');
   });
 });
 

@@ -25,6 +25,13 @@ const ruleSchema = z.object({
   minOcrConfidence: z.number().min(0).max(1).optional(),
   minNameSimilarity: z.number().min(0).max(1).optional(),
   minTamperScore: z.number().min(0).max(1).optional(),
+  bunchingBandPercent: z.number().positive().max(100).optional(),
+  minBandCount: z.number().int().min(2).optional(),
+  bunchingRatio: z.number().positive().optional(),
+  maxSerialSpan: z.number().int().nonnegative().optional(),
+  roundIncomeStep: z.number().int().positive().optional(),
+  nearMissFloor: z.number().min(0).max(1).optional(),
+  minNearMissFields: z.number().int().min(1).optional(),
   // Prose kept alongside each rule explaining why it is weighted as it is.
   note: z.string().optional(),
 });
@@ -41,7 +48,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const configDir = path.resolve(here, '../../../../config');
 
 /** The version new flags are scored under. Older files stay loadable for reproduction. */
-export const ACTIVE_RULES_VERSION = 'v3';
+export const ACTIVE_RULES_VERSION = 'v4';
 
 export function loadRulesConfig(version = ACTIVE_RULES_VERSION): RulesConfig {
   const file = path.join(configDir, `rules.${version}.json`);

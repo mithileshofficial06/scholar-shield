@@ -118,7 +118,7 @@ export function evaluateCase(
     pairs,
   );
 
-  const { findings, scores } = evaluateRules(scorables, components, config, cycleDeadline);
+  const { findings, scores } = evaluateRules(scorables, components, config, cycleDeadline, pairs);
 
   const stripId = (id: string) => id.slice(seedCase.id.length + 2);
 

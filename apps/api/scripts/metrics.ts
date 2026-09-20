@@ -35,6 +35,8 @@ import {
 } from '../src/evaluation/harness.js';
 import { EQUITY_CASES } from '../../../db/seed/patterns.equity.js';
 import { HOLDOUT_CASES } from '../../../db/seed/patterns.holdout.js';
+import { RETIRED_HOLDOUT_CASES } from '../../../db/seed/holdout-status.js';
+import { SEALED_V2_CASES } from '../../../db/seed/patterns.sealed-v2.js';
 import { KNOWN_CASES } from '../../../db/seed/patterns.known.js';
 import { CYCLE_DEADLINE } from '../../../db/seed/types.js';
 
@@ -205,6 +207,7 @@ function equityMetrics(config: ReturnType<typeof loadRulesConfig>) {
 function renderTable(
   known: ReturnType<typeof measureRecall>,
   holdout: ReturnType<typeof measureRecall>,
+  sealedV2: ReturnType<typeof measureRecall>,
   queue: ReturnType<typeof queueMetrics>,
   equity: ReturnType<typeof equityMetrics>,
   documents: DocumentMetrics | null,
@@ -218,8 +221,12 @@ function renderTable(
       `${queue.lift.toFixed(2)}× (top ${queue.decileSize} of ${queue.total})`,
     ],
     [
-      'Holdout recall',
+      'Holdout recall (first set — spent, see notes)',
       `${pct(holdout.recall)} (${holdout.caught}/${holdout.expected})`,
+    ],
+    [
+      'Sealed-v2 recall (pre-registered, no rule targets it)',
+      `${pct(sealedV2.recall)} (${sealedV2.caught}/${sealedV2.expected})`,
     ],
     ['Known recall', `${pct(known.recall)} (${known.caught}/${known.expected})`],
     [
@@ -255,26 +262,42 @@ function renderTable(
 
   const generated = new Date().toISOString().slice(0, 10);
 
-  const missedCases = [...new Set(holdout.missed.map((ref) => ref.split('::')[0]))];
+  const targetedCaught = RETIRED_HOLDOUT_CASES.filter((c) => c.caught).length;
+  const targetedTotal = RETIRED_HOLDOUT_CASES.length;
 
   const holdoutNote = [
     '',
-    `**The sealed holdout is the honest accuracy number, and it is ` +
-      `${pct(holdout.recall)}.** Known recall of ${pct(known.recall)} measures only that the ` +
-      'rules fire on the patterns they were written against — it is a consistency ' +
-      'check, not evidence. Against the patterns sealed before any rule code existed, ' +
-      `the engine surfaced ${holdout.caught} of ${holdout.expected} applications it should have.`,
+    `**The sealed holdout is spent, and ${pct(holdout.recall)} is no longer a clean ` +
+      'generalisation number.** It was one at v3, when it read 38.2%. The data has not ' +
+      'changed — `patterns.holdout.ts` is byte-identical and `git log --diff-filter=A` ' +
+      'still shows it committed a day before any rule code. What changed is that the v3 ' +
+      'metrics note *named the missing rule families*, and the v4 rules were written ' +
+      'against those mechanisms. The sealed case data was never opened, and no threshold ' +
+      'was chosen by checking what a case needed — but the decision about what to build ' +
+      'was informed by this set\'s own results. That is leakage. It is the ordinary way a ' +
+      'project learns from an evaluation, and it is still reported rather than absorbed.',
     '',
-    `Unrecovered patterns: ${missedCases.map((id) => `\`${id}\``).join(', ')}. ` +
-      'Each needs a rule the current set does not contain — income bunching below the ' +
-      'ceiling, certificate serial adjacency, reuse of one certificate across ' +
-      'applicants, family-size inflation, shared contact details across nominally ' +
-      'distinct households, and deliberate household splitting.',
+    `Why no slice of it can be quoted instead: ${targetedTotal} cases are now explicitly ` +
+      'targeted (`db/seed/holdout-status.ts`), and they are *exactly* the cases v3 ' +
+      'missed. Recall over the remainder is therefore 100% by construction, which ' +
+      'measures nothing at all. There is no honest sub-number left in this set.',
     '',
-    '**This holdout is now spent.** Its patterns are known to the author, so rules ' +
-      'written to catch them can no longer be validated against it — doing so would ' +
-      'measure memorisation. A new set must be sealed, before those rules are written, ' +
-      'for the next honest number.',
+    `Of the ${targetedTotal} mechanisms v4 now targets, ${targetedCaught} are caught and ` +
+      `${targetedTotal - targetedCaught} are still missed *with a rule written for them* — ` +
+      'kept visible because a rule that targets a mechanism and still fails to surface it ' +
+      'is the more useful fact:',
+    '',
+    ...RETIRED_HOLDOUT_CASES.map(
+      (c) =>
+        '- `' + c.caseId + '` → `' + c.targetedBy + '` (' + c.since + '): ' +
+        `**${c.caught ? 'caught' : 'still missed'}**. ${c.note}`,
+    ),
+    '',
+    '**The next honest number requires a new sealed set.** `patterns.sealed-v2.ts` is ' +
+      'authored against mechanisms no rule targets, and committed before any rule that ' +
+      'might catch them. It carries a weaker claim than the original — it shares an ' +
+      'author with the engine, where the original was deliberately written first — and ' +
+      'its own header says so.',
   ].join('\n');
 
   const documentNote = documents
@@ -314,6 +337,9 @@ function main(): void {
 
   const known = measureRecall(KNOWN_CASES, config, CYCLE_DEADLINE);
   const holdout = measureRecall(HOLDOUT_CASES as never, config, CYCLE_DEADLINE);
+  // Pre-registered: no rule targets any mechanism in this set, so whatever it
+  // catches, it catches by generalising. Measured now, before v5 exists.
+  const sealedV2 = measureRecall(SEALED_V2_CASES as never, config, CYCLE_DEADLINE);
   const queue = queueMetrics(config);
   const equity = equityMetrics(config);
   const documents = documentMetrics();
@@ -323,6 +349,9 @@ function main(): void {
   if (holdout.missed.length) {
     console.log(`    missed: ${holdout.missed.join(', ')}`);
   }
+  console.log(
+    `  sealed-v2 recall ${pct(sealedV2.recall)} (${sealedV2.caught}/${sealedV2.expected})  [pre-registered]`,
+  );
   console.log(`  precision@10     ${pct(queue.precisionAt10)} (base ${pct(queue.baseRate)})`);
   console.log(`  queue lift       ${queue.lift.toFixed(2)}x`);
   console.log(`  equity pass      ${pct(equity.rate)} (${equity.passed}/${equity.total})`);
@@ -349,7 +378,7 @@ function main(): void {
 
   const updated =
     readme.slice(0, start) +
-    renderTable(known, holdout, queue, equity, documents) +
+    renderTable(known, holdout, sealedV2, queue, equity, documents) +
     readme.slice(end + END_MARKER.length);
 
   writeFileSync(readmePath, updated);
