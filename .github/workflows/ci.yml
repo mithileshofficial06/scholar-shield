@@ -123,6 +123,19 @@ jobs:
 
       - run: npm ci
 
+      # The corpus is generated, not committed, and it is byte-stable for a
+      # given seed — `corpus.test.ts` asserts that. Regenerating it here is what
+      # makes the document metrics reproducible rather than remembered.
+      - name: Generate the document corpus
+        run: npm run seed:documents
+
+      # metrics.ts runs the document measurement inside this image when there is
+      # no local virtualenv, so the published OCR and ELA numbers come from the
+      # pinned Tesseract in it rather than from whatever the runner happens to
+      # have installed.
+      - name: Build the OCR service image
+        run: docker compose -f infra/docker-compose.yml build ocr-service
+
       - name: Run the metrics harness
         run: npm run metrics
 
