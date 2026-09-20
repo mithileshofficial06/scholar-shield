@@ -110,26 +110,101 @@ Stated plainly: those fixtures and the rules share an author, so passing proves 
 | Queue | Redis + BullMQ |
 | Local dev | Docker Compose |
 
-## Getting started
+## Run the whole thing
 
 ```bash
-docker compose -f infra/docker-compose.yml up -d   # Postgres + Redis + MinIO + OCR service
+docker compose -f infra/docker-compose.yml up -d --build
+```
+
+That is the entire stack — Postgres, Redis, MinIO, the OCR service, the API, the
+pipeline worker, the Next.js front end, and a mail catcher. Migrations run
+first, as their own service, and everything that touches the schema waits on
+them. Then:
+
+```bash
+npm install && npm run seed     # synthetic applications + two staff accounts
+```
+
+| | |
+|---|---|
+| Front end | <http://localhost:3000> |
+| API | <http://localhost:4000> |
+| Inbox (magic links, invitations) | <http://localhost:8025> |
+| MinIO console | <http://localhost:9001> |
+
+Sign in at `/login` as `reviewer@scholarshield.local` with `scholarshield-dev`.
+
+Nothing in that compose file is safe to deploy. The secrets are literals, the
+object store is open on a known password, and `JWT_SECRET` is a placeholder the
+API would refuse in production if it were not handed one. It exists so the whole
+system runs on a laptop in one command.
+
+## Develop against it
+
+```bash
+docker compose -f infra/docker-compose.yml up -d postgres redis minio minio-init ocr-service mailpit
 npm install
 npm run migrate
 npm run seed
-npm run seed:documents                             # synthetic certificate corpus
-npm run dev                                        # API
-npm run worker                                     # pipeline worker (separate process)
-npm run dev:web                                    # Next.js
+npm run seed:documents     # synthetic certificate corpus, for the OCR metrics
+npm run dev                # API
+npm run worker             # pipeline worker, separate process
+npm run dev:web            # Next.js
 ```
 
-The worker is a separate process on purpose: OCR is CPU-bound and blocking, and running it inside the API makes request latency a function of how many documents are being read at the time.
-
-To regenerate the metrics table above:
+The worker is a separate process on purpose: OCR is CPU-bound and blocking, and
+running it inside the API makes request latency a function of how many documents
+are being read at the time.
 
 ```bash
-npm run metrics
+npm test                   # unit suite — needs nothing running
+npm run test:integration   # pipeline against a real Postgres
+npm run metrics            # regenerates the table above, in place
 ```
+
+The integration suite fails rather than skips when it cannot reach a database.
+A suite that passes because it could not connect is how an unverified claim
+survives a green build.
+
+## A five-minute walkthrough
+
+For a demo, in this order. Each step shows something the one before it cannot.
+
+1. **`/dashboard`** — the queue, ordered by score. Note what the score does: it
+   decides position and nothing else.
+2. **Open the top application.** The checklist shows *every* check, including the
+   ones that passed and the ones that could not run. A reviewer can only trust
+   the absence of a flag if they can see which checks ran.
+3. **The household panel.** The graph shows which applications were resolved
+   together and which field matched on each edge. Reject an edge and the
+   household splits and re-scores — the resolver is contestable, not final.
+4. **Decide.** Approve, escalate, reject or trash, each needing a typed reason.
+   There is no path to a terminal status that does not carry a reviewer's id.
+5. **`/admin` → audit log.** The decision is already there, append-only, with
+   the reason. Then try `/status` as an applicant: no score, no flag, no
+   household. That boundary is asserted by a test, not by the UI.
+6. **`npm run metrics`.** The numbers in this README, regenerated, including the
+   ones that are bad.
+
+## Deploying it for real
+
+The images are production-shaped — multi-stage, non-root, no dev dependencies,
+healthchecked — and the compose file is not. Before this runs anywhere real:
+
+- **Secrets.** `JWT_SECRET` from a secret store, not a file. The API exits at
+  boot on a placeholder, and on a missing `SMTP_URL`, because a deployment that
+  cannot send a sign-in link cannot sign anyone in.
+- **Postgres and object storage** as managed services. The compose Postgres has
+  no backups and the MinIO bucket is created by a shell one-liner.
+- **TLS terminating in front of the web and API containers.** Session cookies
+  are `secure` outside development and will not be set over plain HTTP.
+- **`NEXT_PUBLIC_API_URL` is baked into the client bundle at build time**, so
+  the web image must be rebuilt per environment. `API_INTERNAL_URL` is the
+  server's separate, private view of the same API.
+- **Migrations** run as their own step before the API starts; the compose
+  `migrate` service is the shape to copy.
+- Everything under *Limitations* below, and the compliance work in
+  [PROJECT_REPORT.md §14](./PROJECT_REPORT.md) — none of which is code.
 
 ## Limitations
 
@@ -137,11 +212,16 @@ This project cannot verify a family's actual income against ground truth — it 
 
 Deploying this to a real committee would additionally require DPDP Act compliance review, an institutional data-processing agreement, and an appeals mechanism for flagged applicants. None of that is in scope here.
 
-Three limits are now measured rather than anticipated, and they are the ones worth reading first:
+Four limits are measured rather than anticipated, and they are the ones worth reading first:
 
-- **Holdout recall is 17.6%.** Against fraud patterns sealed before any rule code existed, the engine surfaces 6 of 34 applications it should. The rules generalise poorly beyond the patterns they were written for. Known recall of 100% measures consistency, not capability.
-- **Document forensics does not work here.** ELA scores tampered and untampered documents identically (AUC 0.510). Tier 2 contributes nothing on this corpus.
+- **Detection generalises badly: 30.0%.** That is recall against `patterns.sealed-v2.ts`, authored against fraud mechanisms no rule targets and measured before any rule existed that could catch them. It is the only clean number here. The engine surfaces 3 of 10 applications it should.
+- **The original sealed holdout is spent.** It reads 70.6%, up from 38.2% before the population-level rules, but that figure is no longer a generalisation measure: the v3 metrics note named the missing rule families and v4 was written against them. The sealed case data was never opened and no threshold was tuned to a case — the choice of *what to build* was still informed by the set's own results. The full accounting is in the Validation section above and in `db/seed/holdout-status.ts`.
+- **Document forensics does not work here.** ELA scores tampered and untampered documents identically (AUC 0.510, where 0.500 is chance). Tier 2 contributes nothing on this corpus. This is a measured negative result, not an unfinished feature — the matched control group exists precisely so it could be detected rather than assumed.
 - **OCR is 92.5% accurate per field**, so roughly one document in three carries at least one misread field. Every extracted value reaches the reviewer with its confidence attached for that reason.
+
+The ELA and OCR figures come from a run with the OCR service's virtualenv and the generated corpus present. When the metrics table above reports them as not measured, that environment has not been set up in this checkout — see `apps/ocr-service/README.md`. The numbers are reproducible, not recalled.
+
+There is also no district income signal at all: Tier 4 was cut. Every shipped signal is *relative* — to a sibling, to the applicant's own certificate, or to the rest of the cycle — so a household that lies consistently, alone, in a district with few other applicants is not something this system can see.
 
 Full limitations: [PROJECT_REPORT.md §14](./PROJECT_REPORT.md).
 

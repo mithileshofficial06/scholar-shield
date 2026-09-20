@@ -86,7 +86,11 @@ For every certificate, the system generates a **pre-filled manual-verification l
 
 Behind a `CertificateVerificationAdapter` interface sit two implementations: `ManualLinkAdapter` (default) and `MockStateAdapter` (seeded fixtures, for tests and demo). **No scraping adapter is built.** The interface exists so a state that publishes an official API can be added without touching anything else — the architecture story is preserved and the ToS exposure is zero. This was previously budgeted as a week of work against a portal likely to CAPTCHA-block it; that week now goes to Tier 1.
 
-### Tier 4 — Locality income band (soft signal, low weight)
+### Tier 4 — Locality income band (soft signal, low weight) — **CUT, NOT BUILT**
+
+> **Status: cut.** This tier was first in the cut order below and it is the one that was taken. There is no district income table, no import, and no rule — `grep -r per_capita` returns nothing. It is described here as designed rather than as delivered, and §14 no longer lists its limitations as though they were live.
+>
+> Cutting it was the intended trade, but it is worth being precise about what was lost: Tier 4 is the only signal that would have looked at an application's income in absolute terms against the place it comes from. Everything shipped is relative — an application against a sibling, a certificate against its form, a cohort against the rest of a cycle. A household that lies consistently, alone, in a district where nobody else applies remains invisible to this system.
 
 Declared income compared against district-level reference income from [data.gov.in's "District wise Per Capita Income"](https://www.data.gov.in/catalog/district-wise-capita-income-current-prices) datasets, published under NDSAP.
 
@@ -94,7 +98,9 @@ The earlier draft compared a **household** income certificate against a **per-ca
 
 ### Tier 5 — Anonymous tip intake
 
-A lightweight form routing into the same queue as a distinct, clearly-labeled flag type. A tip **cannot move an application into the high-severity band on its own** — it attaches a visible flag for the reviewer and nothing more. Abuse controls in §11.
+A lightweight form, shipped at `/tip`. **What was built is weaker than what this section originally specified, deliberately.** The design said a tip attaches "a distinct, clearly-labeled flag type" that cannot reach high severity alone. The implementation attaches no flag at all: a tip writes a `tips` row, contributes zero to the score, and changes nothing about queue position.
+
+The reason is that any weight above zero makes an anonymous, unverifiable accusation move a real person up a queue, and the person it moves has no way to learn it happened or to answer it. A reviewer sees tips on the application, framed as unverified hearsay, and decides what they are worth. Abuse controls in §11; the submitter's address is salted and hashed before storage and never reaches the reviewer payload.
 
 ### Scoring
 
@@ -289,7 +295,7 @@ The earlier estimate of 4–6 weeks came from removing Java's learning curve, bu
 - **Entity resolution will produce both false merges and false splits.** Common names in Indian datasets are genuinely ambiguous, and no tuning removes that. This is why a household contradiction is a *flag with a visible graph*, not a determination — the reviewer sees the edges and can reject the merge.
 - **No scraping of government portals.** Certificate authenticity is reviewer-driven by design; the adapter interface exists for a future official API, not as a stalled TODO.
 - **ELA remains a prioritization signal, not evidence** — now with a measured false-positive rate (§7.3) rather than an unquantified caveat.
-- **The district income table is a periodically re-imported static dataset**, lagging by years, with averages masking intra-district variation. Even normalized per-capita, it stays a low-weight soft signal.
+- **There is no district income signal.** Tier 4 was cut (§5) and never built, so nothing in the engine compares a declared income against the place it came from. Every shipped signal is relative — to a sibling, to the applicant's own certificate, or to the rest of the cycle — which means a household that lies consistently, alone, in a district with few other applicants is not something this system can see.
 - **Deployment to a real committee would require more than this repo:** DPDP Act compliance review, an institutional data-processing agreement, and an appeals mechanism for flagged applicants. None of that is in scope, and the README says so.
 
 ## 15. Why this is a strong project
