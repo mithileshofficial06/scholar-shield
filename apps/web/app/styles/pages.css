@@ -570,3 +570,140 @@
     order: 2;
   }
 }
+
+/* ------------------------------------------------------------------- tips */
+
+.tip-shell {
+  display: grid;
+  gap: 20px;
+  max-width: 640px;
+}
+
+.tip-head h1 {
+  margin: 0 0 8px;
+}
+
+.tip-lede {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.tip-limits h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.tip-limits ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 10px;
+}
+
+.tip-limits li {
+  color: var(--text-2);
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+
+.tip-limits strong {
+  color: var(--text);
+}
+
+.field-optional {
+  margin-left: 6px;
+  color: var(--text-3);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tip-done h2 {
+  margin: 0 0 10px;
+}
+
+.tip-done p {
+  margin: 0 0 10px;
+  color: var(--text-2);
+  line-height: 1.6;
+}
+
+.tip-note {
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+  font-size: 13.5px;
+}
+
+/* The reviewer's side. Deliberately plain: a tip must not be styled like a
+   finding, because it has none of a finding's provenance. */
+
+.tips-caution {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--ink);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.tip-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 12px;
+}
+
+.tip-item {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.tip-item.is-abusive {
+  background: var(--surface-2);
+}
+
+.tip-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+
+.tip-tag {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-weight: 600;
+}
+
+.tip-body {
+  margin: 0 0 10px;
+  color: var(--text);
+  font-size: 14.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tip-hidden {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 13.5px;
+  font-style: italic;
+}
+
+@media (max-width: 760px) {
+  .tip-shell {
+    gap: 16px;
+  }
+}

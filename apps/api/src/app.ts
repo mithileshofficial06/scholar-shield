@@ -12,6 +12,7 @@ import { pipelineRouter } from './routes/pipeline.js';
 import { documentsRouter } from './routes/documents.js';
 import { householdsRouter } from './routes/households.js';
 import { adminRouter } from './routes/admin.js';
+import { tipsRouter } from './routes/tips.js';
 
 /**
  * An AggregateError — which is what pg throws when a host resolves to both ::1 and
@@ -58,6 +59,7 @@ export function createApp() {
   app.use('/documents', documentsRouter);
   app.use('/households', householdsRouter);
   app.use('/admin', adminRouter);
+  app.use('/tips', tipsRouter);
 
   app.use((_req: Request, res: Response) => {
     res.status(404).json({ error: 'not_found', message: 'No such route.' });

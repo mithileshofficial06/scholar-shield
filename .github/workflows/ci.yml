@@ -6,7 +6,8 @@ on:
   pull_request:
 
 jobs:
-  test:
+  node:
+    name: Node — typecheck and tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,3 +22,67 @@ jobs:
       - run: npm run typecheck --workspaces --if-present
 
       - run: npm run test --workspace apps/api
+
+  # The OCR and forensics service is ~825 lines of Python with its own suite,
+  # and until this job existed none of it ran on a push. It is the half of the
+  # system most able to break silently: a change in how a page is deskewed or
+  # how ELA is computed produces no type error and no failing Node test, just a
+  # different number in the metrics nobody reruns.
+  python:
+    name: Python — OCR and forensics tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: apps/ocr-service/requirements.txt
+
+      # Tesseract is a system binary rather than a wheel, and the extraction
+      # tests are meaningless without it — skipping them here would recreate
+      # exactly the silence this job exists to end.
+      - name: Install Tesseract
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng
+          tesseract --version
+
+      - name: Install dependencies
+        working-directory: apps/ocr-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # The `slow` marker is deselected by pytest.ini: those tests need the
+      # generated corpus, which is built by `npm run seed:documents` and is not
+      # in the repository. Everything else runs.
+      - name: Run tests
+        working-directory: apps/ocr-service
+        run: pytest
+
+  # The published metrics are a claim the README makes in the user's name, so
+  # the script that writes them has to at least still run. This does not assert
+  # a number -- thresholds are a judgement, not a build failure -- it asserts
+  # the harness is not broken, which is what silently rots.
+  metrics:
+    name: Metrics harness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run the metrics harness
+        run: npm run metrics
+
+      # If this fails, the committed README disagrees with what the engine now
+      # produces, and one of the two needs updating before the claim is made.
+      - name: Fail if README metrics are stale
+        run: git diff --exit-code -- README.md

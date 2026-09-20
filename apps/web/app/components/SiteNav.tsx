@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 const PUBLIC = [
   { href: '/', label: 'Overview' },
   { href: '/apply', label: 'Apply' },
+  { href: '/tip', label: 'Report a concern' },
 ];
 
 const STAFF = [{ href: '/dashboard', label: 'Queue' }];

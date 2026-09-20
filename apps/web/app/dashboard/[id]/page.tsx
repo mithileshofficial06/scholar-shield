@@ -8,6 +8,7 @@ import { apiGet } from '../../lib/session';
 import { ChecklistPanel } from './ChecklistPanel';
 import { DecisionForm } from './DecisionForm';
 import { DocumentPanel } from './DocumentPanel';
+import { TipsPanel, type TipView } from './TipsPanel';
 import { HouseholdGraph } from './HouseholdGraph';
 import { VerificationForm } from './VerificationForm';
 
@@ -78,10 +79,11 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
   }
 
   const application = detail.data;
-  const [household, reviews, checklist] = await Promise.all([
+  const [household, reviews, checklist, tips] = await Promise.all([
     apiGet<HouseholdView>(`/applications/${id}/household`),
     apiGet<{ items: ReviewWithEmail[] }>(`/applications/${id}/reviews`),
     apiGet<ApplicationChecklist>(`/applications/${id}/checks`),
+    apiGet<{ items: TipView[] }>(`/tips/application/${id}`),
   ]);
 
   const severity =
@@ -197,6 +199,19 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
               ) : (
                 <div className="panel-empty">
                   <p>The household could not be loaded.</p>
+                </div>
+              )}
+            </Panel>
+
+            <Panel
+              title="Tips"
+              subtitle="Anonymous reports about this application. Unverified, and scored at zero."
+            >
+              {tips.kind === 'ok' ? (
+                <TipsPanel applicationId={application.id} tips={tips.data.items} />
+              ) : (
+                <div className="panel-empty">
+                  <p>Tips could not be loaded.</p>
                 </div>
               )}
             </Panel>
