@@ -9,6 +9,7 @@
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.test.json",
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:watch": "vitest",
     "migrate": "tsx scripts/migrate.ts",
     "seed": "tsx scripts/seed.ts",

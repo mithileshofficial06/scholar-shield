@@ -23,6 +23,50 @@ jobs:
 
       - run: npm run test --workspace apps/api
 
+  # The integration suite needs a real Postgres, because what it verifies lives
+  # in the database: a UNIQUE constraint picking a winner between two concurrent
+  # stage claims, and an ON CONFLICT clause making a replayed write a no-op.
+  # PROJECT_REPORT.md section 10 claims both; nothing ran them until this job.
+  integration:
+    name: Integration — pipeline against Postgres
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: scholarshield
+          POSTGRES_PASSWORD: scholarshield
+          POSTGRES_DB: scholarshield
+        ports:
+          - 5432:5432
+        # Without this the first migration races the server's own startup.
+        options: >-
+          --health-cmd "pg_isready -U scholarshield"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://scholarshield:scholarshield@localhost:5432/scholarshield
+      JWT_SECRET: ci-only-secret-not-used-anywhere-real
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Apply migrations
+        run: npm run migrate
+
+      - name: Run the integration suite
+        run: npm run test:integration
+
   # The OCR and forensics service is ~825 lines of Python with its own suite,
   # and until this job existed none of it ran on a push. It is the half of the
   # system most able to break silently: a change in how a page is deskewed or
