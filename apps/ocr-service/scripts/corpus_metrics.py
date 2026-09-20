@@ -4,6 +4,9 @@ Document-stage metrics over the synthetic corpus.
     .venv/Scripts/python scripts/corpus_metrics.py            # human readable
     .venv/Scripts/python scripts/corpus_metrics.py --json     # for metrics.ts
 
+Set SCHOLARSHIELD_CORPUS_DIR to point at the corpus explicitly; metrics.ts uses
+that to run this inside the OCR service image when there is no local venv.
+
 Prints measurements, never targets. `apps/api/scripts/metrics.ts` spawns this
 with --json and writes the result into the README, so nothing in the published
 table is ever typed by hand.
@@ -17,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import statistics
 import sys
 import time
@@ -30,7 +34,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import forensics, grading, ocr  # noqa: E402
 from app.config import get_settings  # noqa: E402
 
-CORPUS_ROOT = Path(__file__).resolve().parents[3] / "db" / "seed" / "output"
+def _corpus_root() -> Path:
+    """
+    Where the generated corpus lives.
+
+    Overridable because this script has two homes. Run from a checkout it sits
+    four directories below the repository root; run inside the service image it
+    sits at /srv/scripts, where that arithmetic walks off the top of the
+    filesystem. The override is what lets the metrics run in the container that
+    already carries Tesseract, instead of requiring it on the host.
+    """
+    override = os.environ.get("SCHOLARSHIELD_CORPUS_DIR")
+    if override:
+        return Path(override)
+    here = Path(__file__).resolve()
+    return here.parents[3] / "db" / "seed" / "output"
+
+
+CORPUS_ROOT = _corpus_root()
 
 # A control document scoring at or above this counts as a false positive. Same
 # threshold the reviewer UI would use to surface a region of interest.
@@ -80,7 +101,11 @@ def main() -> int:
     started = time.time()
 
     for entry in documents:
-        path = CORPUS_ROOT / entry["file"]
+        # Older manifests were generated on Windows and carry backslashes, which
+        # are ordinary filename characters on Linux rather than separators. The
+        # generator now writes POSIX paths; this keeps a committed corpus from
+        # before that change readable.
+        path = CORPUS_ROOT / entry["file"].replace("\\", "/")
         image = Image.open(path)
         raw = path.read_bytes()
 

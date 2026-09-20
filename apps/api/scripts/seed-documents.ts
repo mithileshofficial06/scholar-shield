@@ -37,6 +37,16 @@ interface ManifestEntry {
   ref: string;
   caseId: string;
   variant: 'genuine' | 'tampered' | 'control';
+  /**
+   * Path relative to the corpus root, always with forward slashes.
+   *
+   * `path.join` uses the host separator, so a manifest generated on Windows
+   * used to carry backslashes and could not be read by the Python metrics
+   * script on Linux — including inside the OCR service image, which is where
+   * the document metrics actually run when there is no local virtualenv.
+   * The corpus is a committed artifact shared between two operating systems
+   * and three runtimes, so its paths are POSIX by construction.
+   */
   file: string;
   sha256: string;
   bytes: number;
@@ -120,7 +130,7 @@ async function main(): Promise<void> {
 
       // 1. Genuine: rendered, then degraded.
       const degraded = await degrade(rendered.png, { seed: ref });
-      const genuinePath = path.join('genuine', `${ref}.jpg`);
+      const genuinePath = `genuine/${ref}.jpg`;
       await writeFile(path.join(outputDir, genuinePath), degraded.jpeg);
 
       manifest.push({
@@ -162,7 +172,7 @@ async function main(): Promise<void> {
       });
       const tamperedFinal = await degrade(tampered.jpeg, { seed: ref });
 
-      const tamperedPath = path.join('tampered', `${ref}.jpg`);
+      const tamperedPath = `tampered/${ref}.jpg`;
       await writeFile(path.join(outputDir, tamperedPath), tamperedFinal.jpeg);
       tamperedCount += 1;
 
@@ -184,7 +194,7 @@ async function main(): Promise<void> {
       const control = await recompressControl(rendered.png);
       const controlFinal = await degrade(control.jpeg, { seed: ref });
 
-      const controlPath = path.join('control', `${ref}.jpg`);
+      const controlPath = `control/${ref}.jpg`;
       await writeFile(path.join(outputDir, controlPath), controlFinal.jpeg);
 
       manifest.push({

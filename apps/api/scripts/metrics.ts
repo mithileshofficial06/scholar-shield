@@ -80,38 +80,96 @@ function pct(value: number): string {
  */
 function documentMetrics(): DocumentMetrics | null {
   const serviceDir = path.join(repoRoot, 'apps', 'ocr-service');
-  const candidates = [
-    path.join(serviceDir, '.venv', 'Scripts', 'python.exe'),
-    path.join(serviceDir, '.venv', 'bin', 'python'),
-  ];
-  const python = candidates.find((candidate) => existsSync(candidate));
 
-  if (!python) {
+  if (!existsSync(path.join(repoRoot, 'db', 'seed', 'output', 'manifest.json'))) {
     console.warn(
-      '! ocr-service virtualenv not found — document metrics skipped.\n' +
-        '  See apps/ocr-service/README.md for setup.',
+      '! document corpus not generated — document metrics skipped.\n' +
+        '  Run `npm run seed:documents`.',
     );
     return null;
   }
 
-  console.log('  running document metrics (this takes a few minutes)...');
-  const result = spawnSync(python, ['scripts/corpus_metrics.py', '--json'], {
-    cwd: serviceDir,
-    encoding: 'utf8',
-    maxBuffer: 32 * 1024 * 1024,
-  });
+  const venv = [
+    path.join(serviceDir, '.venv', 'Scripts', 'python.exe'),
+    path.join(serviceDir, '.venv', 'bin', 'python'),
+  ].find((candidate) => existsSync(candidate));
 
-  if (result.status !== 0) {
-    console.warn(`! document metrics failed:\n${result.stderr?.trim()}`);
+  const run = venv ? runInVenv(venv, serviceDir) : runInDocker();
+  if (!run) return null;
+
+  if (run.status !== 0) {
+    console.warn(`! document metrics failed:\n${run.stderr?.trim()}`);
     return null;
   }
 
   try {
-    return JSON.parse(result.stdout) as DocumentMetrics;
+    return JSON.parse(run.stdout) as DocumentMetrics;
   } catch {
     console.warn('! document metrics returned unparseable output');
     return null;
   }
+}
+
+function runInVenv(python: string, serviceDir: string) {
+  console.log('  running document metrics in the local virtualenv (a few minutes)...');
+  return spawnSync(python, ['scripts/corpus_metrics.py', '--json'], {
+    cwd: serviceDir,
+    encoding: 'utf8',
+    maxBuffer: 32 * 1024 * 1024,
+  });
+}
+
+/**
+ * Fall back to the OCR service image.
+ *
+ * Tesseract is a system binary rather than a wheel, so measuring OCR accuracy
+ * used to require installing it on the host — and when nobody did, the published
+ * table carried "not measured" for exactly the rows describing the half of the
+ * system most able to break silently. The service image already contains the
+ * pinned Tesseract those numbers are meant to be reproducible against, which
+ * makes it a better place to run this than a laptop, not a worse one.
+ *
+ * The corpus is mounted read-only, and `scripts/` is mounted over the copy baked
+ * into the image so the measurement always reflects the working tree.
+ */
+function runInDocker() {
+  const image = 'scholarshield-ocr-service:latest';
+
+  const available = spawnSync('docker', ['image', 'inspect', image], { encoding: 'utf8' });
+  if (available.status !== 0) {
+    console.warn(
+      '! no ocr-service virtualenv and no built image — document metrics skipped.\n' +
+        '  Either set up the virtualenv (apps/ocr-service/README.md), or build the\n' +
+        '  image: docker compose -f infra/docker-compose.yml build ocr-service',
+    );
+    return null;
+  }
+
+  console.log('  running document metrics in the ocr-service image (a few minutes)...');
+  return spawnSync(
+    'docker',
+    [
+      'run',
+      '--rm',
+      '-e',
+      'SCHOLARSHIELD_CORPUS_DIR=/corpus',
+      '-v',
+      `${path.join(repoRoot, 'db', 'seed', 'output')}:/corpus:ro`,
+      '-v',
+      `${path.join(repoRoot, 'apps', 'ocr-service', 'scripts')}:/srv/scripts:ro`,
+      image,
+      'python',
+      'scripts/corpus_metrics.py',
+      '--json',
+    ],
+    {
+      encoding: 'utf8',
+      maxBuffer: 32 * 1024 * 1024,
+      // Git Bash rewrites anything that looks like a Unix path in an argument,
+      // turning /corpus into a Windows directory before docker ever sees it.
+      env: { ...process.env, MSYS_NO_PATHCONV: '1' },
+    },
+  );
 }
 
 /**
