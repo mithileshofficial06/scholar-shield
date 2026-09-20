@@ -14,7 +14,20 @@ import { cookies } from 'next/headers';
 export const SESSION_COOKIE = 'ss_session';
 export const ROLE_COOKIE = 'ss_role';
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+/**
+ * Where THIS PROCESS reaches the API.
+ *
+ * Two different answers are needed and they are not interchangeable. Server
+ * components and the proxy route run inside the web container, where the API is
+ * a service name on a private network (`http://api:4000`). The browser runs on
+ * someone's laptop, where that name does not resolve and the API is published
+ * on a host port. `NEXT_PUBLIC_API_URL` is compiled into the client bundle and
+ * must therefore be the browser's answer; `API_INTERNAL_URL` is the server's,
+ * and falls back to the public one for local development where they are the
+ * same thing.
+ */
+export const API_BASE =
+  process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 export interface Session {
   token: string;

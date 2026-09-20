@@ -82,6 +82,121 @@ services:
       retries: 5
       start_period: 10s
 
+  # Catches every outbound email instead of sending it. The API refuses to boot
+  # in production without an SMTP_URL -- correctly, since a deployment that
+  # cannot send a sign-in link cannot sign anyone in -- and a demo stack needs
+  # somewhere for magic links and staff invitations to actually arrive. Read
+  # them at http://localhost:8025.
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: scholarshield-mailpit
+    ports:
+      - "8025:8025"
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Applies migrations, then exits. Everything that touches the schema waits on
+  # it completing successfully, so a fresh `docker compose up` on an empty
+  # volume cannot race the API into querying tables that do not exist yet.
+  migrate:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    container_name: scholarshield-migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://scholarshield:scholarshield@postgres:5432/scholarshield
+      # config.ts is loaded transitively by db.ts and enforces its production
+      # guards on import, so even the migrator has to satisfy them.
+      JWT_SECRET: compose-demo-secret-change-me-before-anything-real
+      SMTP_URL: smtp://mailpit:1025
+    command: ["node", "apps/api/dist/migrate.js"]
+    restart: "no"
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    container_name: scholarshield-api
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_healthy
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://scholarshield:scholarshield@postgres:5432/scholarshield
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: scholarshield
+      S3_SECRET_KEY: scholarshield
+      S3_BUCKET: scholarshield-documents
+      OCR_SERVICE_URL: http://ocr-service:8000
+      WEB_BASE_URL: http://localhost:3000
+      SMTP_URL: smtp://mailpit:1025
+      # Demo-only. config.ts refuses to boot in production on a dev secret, and
+      # a real deployment must set this from a secret store, not a compose file.
+      JWT_SECRET: compose-demo-secret-change-me-before-anything-real
+
+  # Same image as the API, different command. They share the rule engine, so
+  # building them separately would mean two artifacts that must not drift.
+  worker:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    container_name: scholarshield-worker
+    depends_on:
+      api:
+        condition: service_started
+      ocr-service:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://scholarshield:scholarshield@postgres:5432/scholarshield
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: scholarshield
+      S3_SECRET_KEY: scholarshield
+      S3_BUCKET: scholarshield-documents
+      OCR_SERVICE_URL: http://ocr-service:8000
+      SMTP_URL: smtp://mailpit:1025
+      JWT_SECRET: compose-demo-secret-change-me-before-anything-real
+    command: ["node", "apps/api/dist/pipeline/main.js"]
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      args:
+        # The BROWSER's view of the API. Inlined into the client bundle at build
+        # time, which is why it is an arg and not only an environment variable.
+        NEXT_PUBLIC_API_URL: http://localhost:4000
+    container_name: scholarshield-web
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      # This process's own view of the API, which is not the browser's.
+      API_INTERNAL_URL: http://api:4000
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+
 volumes:
   postgres-data:
   redis-data:

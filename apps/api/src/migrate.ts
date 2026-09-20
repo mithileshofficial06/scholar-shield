@@ -1,6 +1,14 @@
 /**
  * Minimal forward-only migration runner.
  *
+ * Lives in `src/` rather than `scripts/` because applying migrations is a
+ * deploy-time step the API image performs, not a developer convenience: the
+ * compose `migrate` service runs the compiled output of this file, and every
+ * service that touches the schema waits on it. `scripts/` is deliberately left
+ * out of the runtime image, since a production container has no business
+ * carrying a seeder that truncates tables.
+ *
+ *
  * Applies db/migrations/*.sql in filename order, once each, inside a transaction,
  * recording applied files in schema_migrations. 002_app_role.sql needs superuser
  * privileges and is skipped with a warning rather than failing the run when the
@@ -9,7 +17,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { pool } from '../src/db.js';
+import { pool } from './db.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const migrationsDir = path.resolve(here, '../../../db/migrations');
