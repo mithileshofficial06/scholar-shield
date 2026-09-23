@@ -1,3 +1,7 @@
+import { fileURLToPath } from 'node:url';
+
+const workspaceRoot = fileURLToPath(new URL('../../', import.meta.url));
+
 /** @type {import("next").NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -7,7 +11,7 @@ const nextConfig = {
   // The workspace root, not apps/web: tracing from the package directory misses
   // the hoisted node_modules and the shared package, and the standalone build
   // then starts and immediately fails on a missing module.
-  outputFileTracingRoot: new URL("../../", import.meta.url).pathname,
+  outputFileTracingRoot: workspaceRoot,
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000",
   },
