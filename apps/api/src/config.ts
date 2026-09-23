@@ -5,6 +5,10 @@ const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   API_PORT: z.coerce.number().int().positive().default(4000),
   WEB_ORIGIN: z.string().url().default('http://localhost:3000'),
+  // Set to the number of trusted reverse-proxy hops in a real deployment. It
+  // stays at zero locally: accepting X-Forwarded-For directly from a client
+  // would let that client choose the address used by rate limits and auditing.
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(3).default(0),
 
   DATABASE_URL: z
     .string()
@@ -34,7 +38,7 @@ const schema = z.object({
   // Upload limits. Matched to the OCR service's own cap (OCR_MAX_UPLOAD_BYTES).
   MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(12 * 1024 * 1024),
 
-  JWT_SECRET: z.string().min(16).default('dev-only-secret-do-not-use-in-production'),
+  JWT_SECRET: z.string().min(32).default('dev-only-secret-do-not-use-in-production'),
   MAGIC_LINK_TTL_MINUTES: z.coerce.number().int().positive().default(20),
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(12),
 
@@ -58,9 +62,16 @@ export const config = parsed.data;
 
 export const isProduction = config.NODE_ENV === 'production';
 
-// A default secret is fine for local dev and tests; shipping one is not.
-if (isProduction && config.JWT_SECRET.startsWith('dev-only')) {
-  console.error('JWT_SECRET must be set to a real value in production.');
+// A default secret is fine for local dev and tests; shipping one is not. Keep
+// the compose demo value on this deny-list too: it is intentionally visible in
+// the repository and must never become a deployment secret by accident.
+const UNSAFE_PRODUCTION_JWT_SECRETS = new Set([
+  'dev-only-secret-do-not-use-in-production',
+  'compose-demo-secret-change-me-before-anything-real',
+]);
+
+if (isProduction && UNSAFE_PRODUCTION_JWT_SECRETS.has(config.JWT_SECRET)) {
+  console.error('JWT_SECRET must be set to a unique secret in production.');
   process.exit(1);
 }
 

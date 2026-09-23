@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { createApp } from '../src/app.js';
 import { hashSubmitter } from '../src/routes/tips.js';
 
 /**
@@ -40,5 +41,11 @@ describe('hashSubmitter', () => {
 
   it('handles a missing address without throwing', () => {
     expect(hashSubmitter('unknown')).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+describe('proxy boundary', () => {
+  it('does not trust forwarded client addresses by default', () => {
+    expect(createApp().get('trust proxy')).toBe(0);
   });
 });

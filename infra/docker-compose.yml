@@ -138,7 +138,10 @@ services:
     ports:
       - "4000:4000"
     environment:
-      NODE_ENV: production
+      # This compose file is a local demo stack, not a production manifest.
+      # Keeping the API in development mode makes the known demo secret
+      # unusable for a real deployment, where config.ts rejects it at boot.
+      NODE_ENV: development
       DATABASE_URL: postgresql://scholarshield:scholarshield@postgres:5432/scholarshield
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://minio:9000
@@ -165,7 +168,7 @@ services:
       ocr-service:
         condition: service_healthy
     environment:
-      NODE_ENV: production
+      NODE_ENV: development
       DATABASE_URL: postgresql://scholarshield:scholarshield@postgres:5432/scholarshield
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://minio:9000

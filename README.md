@@ -269,7 +269,7 @@ npm install && npm run seed     # synthetic applications + two staff accounts
 
 Sign in at `/login` as `reviewer@scholarshield.local` with `scholarshield-dev`.
 
-Nothing in that compose file is safe to deploy. The secrets are literals, the object store is open on a known password, and `JWT_SECRET` is a placeholder the API would refuse in production if it were not handed one. It exists so the whole system runs on a laptop in one command.
+Nothing in that compose file is safe to deploy. The secrets are literals, the object store is open on a known password, and it runs the API and worker in development mode. Its known `JWT_SECRET` is explicitly rejected when `NODE_ENV=production`. It exists so the whole system runs on a laptop in one command.
 
 ## Develop against it
 
@@ -327,6 +327,7 @@ The images are production-shaped — multi-stage, non-root, no dev dependencies,
 - **Secrets.** `JWT_SECRET` from a secret store, not a file. The API exits at boot on a placeholder, and on a missing `SMTP_URL`, because a deployment that cannot send a sign-in link cannot sign anyone in.
 - **Postgres and object storage** as managed services. The compose Postgres has no backups and the MinIO bucket is created by a shell one-liner.
 - **TLS terminating in front of the web and API containers.** Session cookies are `secure` outside development and will not be set over plain HTTP.
+- **Proxy boundaries.** Set `TRUST_PROXY_HOPS` to the exact number of proxies in front of the API. This makes rate limits and anonymous-tip abuse hashes use the client address without trusting forged `X-Forwarded-For` headers from direct callers.
 - **`NEXT_PUBLIC_API_URL` is baked into the client bundle at build time**, so the web image must be rebuilt per environment. `API_INTERNAL_URL` is the server's separate, private view of the same API.
 - **Migrations** run as their own step before the API starts; the compose `migrate` service is the shape to copy.
 - Everything under *Limitations* below, and the compliance work in [PROJECT_REPORT.md §14](./PROJECT_REPORT.md) — none of which is code.

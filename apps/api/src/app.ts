@@ -41,6 +41,11 @@ export function createApp() {
   const app = express();
 
   app.disable('x-powered-by');
+  // Rate limits and the anonymous-tip hash must see the actual client address
+  // when the service sits behind a load balancer. This is deliberately an
+  // explicit hop count rather than `true`: trusting arbitrary forwarded
+  // headers lets a direct caller forge an address and bypass those controls.
+  app.set('trust proxy', config.TRUST_PROXY_HOPS);
   app.use(helmet());
   app.use(
     cors({
