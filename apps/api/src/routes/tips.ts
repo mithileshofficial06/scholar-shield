@@ -28,10 +28,11 @@
  * cycle", which is exactly the fact an applicant is entitled to keep.
  */
 
-import { createHash } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 import { Router } from 'express';
-import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
+
+import { limiter } from '../rateLimit.js';
 
 import { requireStaff } from '../auth/middleware.js';
 import { recordAudit } from '../audit.js';
@@ -41,19 +42,23 @@ import { query } from '../db.js';
 export const tipsRouter = Router();
 
 /**
- * Salted with JWT_SECRET so the hashes are not a rainbow table of every IP that
- * ever visited. A bare sha256 of an IPv4 address is reversible by brute force in
- * seconds — there are only four billion of them.
+ * Keyed with a server secret so the hashes are not a rainbow table of every IP
+ * that ever visited. A bare sha256 of an IPv4 address is reversible by brute
+ * force in seconds — there are only four billion of them.
+ *
+ * An HMAC under its own secret rather than a digest salted with JWT_SECRET:
+ * rotating the session-signing key must not silently make every earlier tip
+ * look like it came from a different submitter.
  */
 export function hashSubmitter(ip: string): string {
-  return createHash('sha256').update(`${config.JWT_SECRET}:${ip}`).digest('hex');
+  return createHmac('sha256', config.TIP_HASH_SECRET ?? config.JWT_SECRET)
+    .update(ip)
+    .digest('hex');
 }
 
-const tipLimiter = rateLimit({
+const tipLimiter = limiter('tips', {
   windowMs: 60 * 60 * 1000,
   limit: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
   message: {
     error: 'rate_limited',
     message: 'Too many tips from this address. Try again later.',

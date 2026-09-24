@@ -16,6 +16,5 @@ numpy==2.2.1
 # document metadata. A self-contained wheel — no poppler or ghostscript to install.
 pypdfium2==4.30.0
 
-# Dev / test
-pytest==8.3.4
-httpx==0.28.1
+# Test-only packages live in requirements-dev.txt, so they do not ship in the
+# runtime image.

@@ -47,8 +47,9 @@ Decision + typed reason → append-only audit log
 Three properties of the pipeline are load-bearing and easy to get wrong:
 
 - **Idempotent stages.** Every handler is keyed on `(document_id, stage)` with a `UNIQUE` constraint, and claims its row in a single `INSERT … ON CONFLICT DO UPDATE` before doing any work. BullMQ delivers at least once; a redelivered job must not double-write flags. Proven in `test/integration/idempotency.test.ts`, including eight concurrent deliveries collapsing to one execution.
-- **Results persist per stage**, so a retry resumes from the failed stage rather than restarting from OCR — which matters because OCR is by far the most expensive step. Exhausted retries land in a dead-letter state surfaced in the admin UI, never failing silently.
-- **The re-scoring fan-out.** When a new application joins a household, *every* application in that household is re-scored. A contradiction is a property of the family, not of one upload — a sibling declaring a different income makes both applications worth looking at, and the one already in the queue has to move.
+- **Results persist per stage**, so a retry resumes from the failed stage rather than restarting from OCR — which matters because OCR is by far the most expensive step. Exhausted retries land in a dead-letter state surfaced in the admin UI, never failing silently. A document that falls out without dead-lettering — an enqueue that failed after its submission committed, a job lost with its Redis — is found and re-queued by the worker's stuck-document sweep every five minutes.
+- **The re-scoring fan-out.** When a new application joins a household, *every* application in that household is re-scored. A contradiction is a property of the family, not of one upload — a sibling declaring a different income makes both applications worth looking at, and the one already in the queue has to move. Rules that reach *across* households (a reused certificate number, one guardian with two incomes, a shared phone, the population rules) move the application on the other side too: every application whose findings changed is rewritten, not only the new upload's household. Resolution and scoring hold a per-cycle lock across the read and the write, so two workers cannot overwrite each other's households.
+- **Who the rules read.** Trashed applications and unconfirmed public submissions are not part of the population. A public submission from a new email address takes part in no rule until the owner of that address uses the link emailed to it — otherwise anyone could file a fake "sibling" to raise a real applicant's score.
 
 ## Design principles
 
@@ -215,12 +216,14 @@ Stated plainly: those fixtures and the rules share an author, so passing proves 
 
 | Concern | How it is handled |
 |---|---|
-| **Applicant auth** | Passwordless magic link, scoped to their own application. Tokens stored hashed. |
-| **Staff auth** | Invite-only, password + optional TOTP (RFC 6238, checked against the RFC's own test vectors). Recovery codes hashed; a spent time-step cannot be replayed. The second factor is verified *after* the password so a wrong password and a wrong code are indistinguishable. |
+| **Applicant auth** | Passwordless magic link, scoped to their own application. Tokens stored hashed. A first submission from a new address is emailed a confirmation link and is not reviewed or cross-referenced until it is used. An unauthenticated request cannot change an existing account's name. |
+| **Staff auth** | Invite-only, password + optional TOTP (RFC 6238, checked against the RFC's own test vectors). Recovery codes hashed; a spent time-step cannot be replayed. The second factor is verified *after* the password so a wrong password and a wrong code are indistinguishable, and a sign-in for an unknown email pays the same scrypt cost as a wrong password. Admins can deactivate an account; every staff token carries a session version checked on each request, so deactivation (or *sign out everywhere*) ends existing sessions immediately rather than at expiry. |
 | **Score isolation** | Applicant-facing payloads are built by explicit construction, never by spreading a row. `test/serializer.test.ts` asserts at runtime that no applicant response contains a score, flag or household. |
 | **Session tokens** | `httpOnly` cookie set by a route handler; JavaScript never holds the token, so an XSS bug cannot read it out of storage — it was never put there. |
 | **Uploads** | Server-side MIME sniffing from the bytes, size and page caps, parsed in the isolated Python service, never executed. |
-| **Audit log** | Append-only at the database grant level. There is no update or delete helper in the module, and the application role holds no such grant. |
+| **Audit log** | Append-only, enforced twice: a trigger rejects UPDATE and DELETE for every role, and the API and worker connect as `scholarshield_app`, which holds no UPDATE, DELETE or TRUNCATE on it. Only the migrator connects as the owner. |
+| **Rate limits** | Kept in Redis, so they hold across API replicas and restarts. |
+| **Exports** | CSV cells that a spreadsheet would evaluate as a formula (`=`, `+`, `-`, `@`) are prefixed so they display as text. |
 | **Retention** | Documents are purged a configured interval after a terminal decision. The row survives carrying `sha256` and `purged_at`, so the audit trail outlives the file. |
 | **Tips** | No session read, submitter address salted and hashed before storage, never in the reviewer payload. A tip writes **no flag and no score** — an anonymous accusation that silently reorders a queue is a denunciation box. |
 
@@ -251,8 +254,11 @@ The engine is `apps/api/src/household/`. Everything else is delivery.
 ## Run the whole thing
 
 ```bash
-docker compose -f infra/docker-compose.yml up -d --build
+cp .env.example .env            # then set JWT_SECRET and TIP_HASH_SECRET
+npm run docker:up               # docker compose --env-file .env … up -d --build
 ```
+
+If a native PostgreSQL already holds port 5432 on your machine, set `POSTGRES_HOST_PORT=5433` in `.env` and use port 5433 in `DATABASE_URL`, or every host-side command reaches the wrong server.
 
 That is the entire stack — Postgres, Redis, MinIO, the OCR service, the API, the pipeline worker, the Next.js front end, and a mail catcher. Migrations run first, as their own service, and everything that touches the schema waits on them. Then:
 
@@ -274,7 +280,7 @@ Nothing in that compose file is safe to deploy. The secrets are literals, the ob
 ## Develop against it
 
 ```bash
-docker compose -f infra/docker-compose.yml up -d postgres redis minio minio-init ocr-service mailpit
+docker compose --env-file .env -f infra/docker-compose.yml up -d postgres redis minio minio-init ocr-service mailpit
 npm install
 npm run migrate
 npm run seed

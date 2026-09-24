@@ -1,12 +1,13 @@
 import { Router } from 'express';
-import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
+
+import { limiter } from '../rateLimit.js';
 
 import { magicLinkMessage, sendMail } from '../mail.js';
 import { query, withTransaction } from '../db.js';
 import { recordAudit } from '../audit.js';
 import { hashPassword, verifyPassword } from '../auth/passwords.js';
-import { requireStaff } from '../auth/middleware.js';
+import { requireStaff, staffSessionIsLive } from '../auth/middleware.js';
 import {
   generateRecoveryCode,
   generateSecret,
@@ -24,14 +25,13 @@ import {
 } from '../auth/tokens.js';
 import { config } from '../config.js';
 import type { UserRole } from '@scholarshield/shared';
+import { rescoreCycle } from './applications.js';
 
 export const authRouter = Router();
 
-const loginLimiter = rateLimit({
+const loginLimiter = limiter('login', {
   windowMs: 15 * 60_000,
   limit: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
   // JSON like every other error here. The default is a plain-text body, which
   // the sign-in forms cannot parse and so report as the service being down.
   message: {
@@ -61,7 +61,16 @@ interface UserRow {
   totp_secret: string | null;
   totp_enabled_at: Date | null;
   totp_last_step: string | null;
+  session_version: number;
+  deactivated_at: Date | null;
 }
+
+/**
+ * A real hash of a password nobody has, computed once. A sign-in for an email
+ * with no account is checked against it, so it pays the same scrypt cost as a
+ * wrong password: otherwise the response time says which staff emails exist.
+ */
+const decoyCredential = hashPassword('decoy-password-for-constant-time-login');
 
 /** Recovery codes are hashed like passwords: the server only needs to compare. */
 function hashRecoveryCode(code: string): string {
@@ -77,7 +86,7 @@ authRouter.post('/staff/login', loginLimiter, async (req, res) => {
 
   const { rows } = await query<UserRow>(
     `SELECT id, email, role, password_hash, password_salt, activated_at,
-            totp_secret, totp_enabled_at, totp_last_step
+            totp_secret, totp_enabled_at, totp_last_step, session_version, deactivated_at
        FROM users WHERE lower(email) = lower($1)`,
     [parsed.data.email],
   );
@@ -87,13 +96,20 @@ authRouter.post('/staff/login', loginLimiter, async (req, res) => {
   // wrong — no oracle for which staff emails exist.
   const invalid = { error: 'invalid_credentials', message: 'Email or password is incorrect.' };
 
-  if (!user || !user.password_hash || !user.password_salt || !user.activated_at) {
-    res.status(401).json(invalid);
-    return;
-  }
+  const usable =
+    user && user.password_hash && user.password_salt && user.activated_at && !user.deactivated_at
+      ? user
+      : null;
 
-  const ok = await verifyPassword(parsed.data.password, user.password_hash, user.password_salt);
-  if (!ok) {
+  // Always run scrypt, against a decoy when there is no usable account, so a
+  // missing or deactivated account takes as long to refuse as a wrong password.
+  const decoy = await decoyCredential;
+  const ok = await verifyPassword(
+    parsed.data.password,
+    usable ? usable.password_hash! : decoy.hash,
+    usable ? usable.password_salt! : decoy.salt,
+  );
+  if (!user || !usable || !ok) {
     res.status(401).json(invalid);
     return;
   }
@@ -117,7 +133,7 @@ authRouter.post('/staff/login', loginLimiter, async (req, res) => {
     }
   }
 
-  const token = issueSession({ kind: 'staff', sub: user.id, role: user.role });
+  const token = issueSession({ kind: 'staff', sub: user.id, role: user.role, sv: user.session_version });
   await recordAudit({
     actorId: user.id,
     actorType: 'user',
@@ -327,7 +343,7 @@ authRouter.post('/totp/disable', requireStaff(), async (req, res) => {
   const userId = req.session!.sub;
   const { rows } = await query<UserRow>(
     `SELECT id, email, role, password_hash, password_salt, activated_at,
-            totp_secret, totp_enabled_at, totp_last_step
+            totp_secret, totp_enabled_at, totp_last_step, session_version, deactivated_at
        FROM users WHERE id = $1`,
     [userId],
   );
@@ -413,10 +429,13 @@ authRouter.post('/applicant/request-link', loginLimiter, async (req, res) => {
   const { token, tokenHash } = createMagicLinkToken();
 
   await withTransaction(async (client) => {
+    // An unauthenticated caller must not be able to rewrite the stored name of
+    // someone else's account, so an existing row is left exactly as it is. A
+    // brand-new applicant has not confirmed anything yet.
     const { rows } = await client.query<{ id: string }>(
-      `INSERT INTO applicants (email, full_name)
-       VALUES ($1, $2)
-       ON CONFLICT (lower(email)) DO UPDATE SET full_name = EXCLUDED.full_name
+      `INSERT INTO applicants (email, full_name, email_confirmed_at)
+       VALUES ($1, $2, NULL)
+       ON CONFLICT (lower(email)) DO UPDATE SET email = applicants.email
        RETURNING id`,
       [parsed.data.email, parsed.data.fullName],
     );
@@ -464,6 +483,7 @@ authRouter.post('/applicant/consume-link', loginLimiter, async (req, res) => {
   }
 
   const tokenHash = hashToken(parsed.data.token);
+  let newlyConfirmed = false;
 
   const session = await withTransaction(async (client) => {
     const { rows } = await client.query<{ id: string; applicant_id: string }>(
@@ -477,6 +497,15 @@ authRouter.post('/applicant/consume-link', loginLimiter, async (req, res) => {
 
     // Single use.
     await client.query(`UPDATE magic_link_tokens SET consumed_at = now() WHERE id = $1`, [row.id]);
+
+    // Using a link sent to the address proves the address, which is what lets
+    // this applicant's applications take part in household resolution.
+    const confirmed = await client.query(
+      `UPDATE applicants SET email_confirmed_at = now()
+        WHERE id = $1 AND email_confirmed_at IS NULL`,
+      [row.applicant_id],
+    );
+    newlyConfirmed = (confirmed.rowCount ?? 0) > 0;
 
     await recordAudit(
       {
@@ -495,6 +524,15 @@ authRouter.post('/applicant/consume-link', loginLimiter, async (req, res) => {
   if (!session) {
     res.status(401).json({ error: 'invalid_token', message: 'That link is invalid or expired.' });
     return;
+  }
+
+  if (newlyConfirmed) {
+    // Their applications have just joined the population the rules read, so
+    // each of their cycles is resolved and scored again — after the response,
+    // because signing in should not wait on a whole cycle's scoring.
+    void rescoreApplicantCycles(session).catch((err: unknown) => {
+      console.error('[auth] rescore after email confirmation failed', err);
+    });
   }
 
   const token = issueSession({ kind: 'applicant', sub: session, applicationId: null });
@@ -555,14 +593,51 @@ authRouter.post('/accept-invite', loginLimiter, async (req, res) => {
     detail: { role: user.role },
   });
 
-  const token = issueSession({ kind: 'staff', sub: user.id, role: user.role });
+  // A freshly activated account has never had its sessions revoked.
+  const token = issueSession({ kind: 'staff', sub: user.id, role: user.role, sv: 0 });
   res.json({ token, role: user.role, email: user.email, expiresInHours: config.SESSION_TTL_HOURS });
 });
 
-authRouter.get('/me', (req, res) => {
+authRouter.get('/me', async (req, res) => {
   if (!req.session) {
     res.status(401).json({ error: 'unauthorized', message: 'No session.' });
     return;
   }
+  if (req.session.kind === 'staff') {
+    const role = await staffSessionIsLive(req.session.sub, req.session.sv);
+    if (!role) {
+      res.status(401).json({ error: 'session_revoked', message: 'This session is no longer valid.' });
+      return;
+    }
+    res.json({ ...req.session, role });
+    return;
+  }
   res.json(req.session);
 });
+
+/**
+ * Sign out everywhere: every staff token issued so far stops working.
+ *
+ * Deleting a cookie signs out one browser and leaves the token inside it valid
+ * until expiry. Bumping the session version revokes all of them at once.
+ */
+authRouter.post('/logout-everywhere', requireStaff(), async (req, res) => {
+  const userId = req.session!.sub;
+  await query(`UPDATE users SET session_version = session_version + 1 WHERE id = $1`, [userId]);
+  await recordAudit({
+    actorId: userId,
+    actorType: 'user',
+    action: 'staff.sessions_revoked',
+    entityType: 'user',
+    entityId: userId,
+  });
+  res.json({ status: 'revoked' });
+});
+
+async function rescoreApplicantCycles(applicantId: string): Promise<void> {
+  const { rows } = await query<{ cycle: string }>(
+    `SELECT DISTINCT cycle FROM applications WHERE applicant_id = $1`,
+    [applicantId],
+  );
+  for (const { cycle } of rows) await rescoreCycle(cycle, null);
+}

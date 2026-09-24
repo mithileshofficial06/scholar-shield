@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
 import { Router } from 'express';
-import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import { z } from 'zod';
 
@@ -9,7 +8,10 @@ import type { HouseholdView } from '@scholarshield/shared';
 
 import { recordAudit } from '../audit.js';
 import { requireApplicant, requireStaff } from '../auth/middleware.js';
+import { createMagicLinkToken } from '../auth/tokens.js';
 import { config } from '../config.js';
+import { confirmationMessage, sendMail } from '../mail.js';
+import { limiter } from '../rateLimit.js';
 import { query, withTransaction } from '../db.js';
 import { applicationChecklist, reconcileCycle, scoreApplications } from '../household/service.js';
 import { enqueueDocument } from '../pipeline/queue.js';
@@ -63,11 +65,9 @@ const upload = multer({
   limits: { fileSize: config.MAX_UPLOAD_BYTES, files: 1 },
 });
 
-const submitLimiter = rateLimit({
+const submitLimiter = limiter('submit', {
   windowMs: 60 * 60 * 1000,
   limit: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
   message: { error: 'rate_limited', message: 'Too many submissions from this address.' },
 });
 
@@ -98,7 +98,9 @@ const submitSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Enter the date as YYYY-MM-DD.')
     .optional()
     .or(z.literal('')),
-  cycle: z.string().regex(/^\d{4}$/, 'The cycle is a four-digit year.').optional(),
+  // No `cycle`: the server decides which cycle a submission joins. Accepting it
+  // from the client let anyone file under a different year and be compared
+  // against nobody. An unknown key is stripped by zod, not rejected.
 });
 
 const blank = (value: string | undefined) => (value === undefined || value === '' ? null : value);
@@ -132,31 +134,56 @@ applicationsRouter.post('/', submitLimiter, upload.single('certificate'), async 
     return;
   }
 
+  // The form has always required the certificate; the API now agrees. An
+  // application with no document never entered the pipeline, so it was never
+  // resolved or scored and sat in `submitted` forever.
   const file = req.file;
-  let contentType: string | null = null;
-  if (file) {
-    contentType = sniffContentType(file.buffer);
-    if (!contentType) {
-      res.status(415).json({
-        error: 'unsupported_media_type',
-        message: 'The certificate must be a JPEG, PNG, WebP or PDF.',
-      });
-      return;
-    }
+  if (!file) {
+    res.status(400).json({
+      error: 'invalid_request',
+      message: 'Some fields need attention.',
+      details: { certificate: ['Attach your income certificate.'] },
+    });
+    return;
+  }
+  const contentType = sniffContentType(file.buffer);
+  if (!contentType) {
+    res.status(415).json({
+      error: 'unsupported_media_type',
+      message: 'The certificate must be a JPEG, PNG, WebP or PDF.',
+    });
+    return;
   }
 
   const input = parsed.data;
-  const cycle = input.cycle ?? config.CURRENT_CYCLE;
+  const cycle = config.CURRENT_CYCLE;
+  // Only a brand-new applicant gets a confirmation link; for an address that
+  // already exists the token is simply unused.
+  const confirmation = createMagicLinkToken();
 
   const created = await withTransaction(async (client) => {
-    const { rows: applicants } = await client.query<{ id: string }>(
-      `INSERT INTO applicants (email, full_name)
-       VALUES ($1, $2)
-       ON CONFLICT (lower(email)) DO UPDATE SET full_name = EXCLUDED.full_name
-       RETURNING id`,
+    // A new address starts unconfirmed (migration 007): anyone can type any
+    // email here, and until its owner clicks the link sent to it, this
+    // application takes no part in household resolution or any rule, so it
+    // cannot raise someone else's score. An existing account is left exactly as
+    // it is — neither its name nor its confirmation is the caller's to change.
+    const { rows: applicants } = await client.query<{ id: string; email_confirmed_at: Date | null }>(
+      `INSERT INTO applicants (email, full_name, email_confirmed_at)
+       VALUES ($1, $2, NULL)
+       ON CONFLICT (lower(email)) DO UPDATE SET email = applicants.email
+       RETURNING id, email_confirmed_at`,
       [input.email, input.applicantName],
     );
     const applicantId = applicants[0]!.id;
+    const needsConfirmation = applicants[0]!.email_confirmed_at === null;
+
+    if (needsConfirmation) {
+      await client.query(
+        `INSERT INTO magic_link_tokens (applicant_id, token_hash, expires_at)
+         VALUES ($1, $2, $3)`,
+        [applicantId, confirmation.tokenHash, confirmationExpiry()],
+      );
+    }
 
     const { rows: applications } = await client.query<ApplicationRow>(
       `INSERT INTO applications
@@ -183,20 +210,17 @@ applicationsRouter.post('/', submitLimiter, upload.single('certificate'), async 
     );
     const application = applications[0]!;
 
-    let documentId: string | null = null;
-    if (file && contentType) {
-      documentId = randomUUID();
-      const storageKey = storage.storageKeyFor(documentId, contentType);
-      // Uploaded before the row is committed: a stored object with no row is
-      // collectable garbage, while a row pointing at bytes that never arrived
-      // would dead-letter the pipeline on every retry.
-      await storage.put(storageKey, file.buffer, contentType);
-      await client.query(
-        `INSERT INTO documents (id, application_id, storage_key, content_type, byte_size, sha256)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [documentId, application.id, storageKey, contentType, file.size, storage.sha256(file.buffer)],
-      );
-    }
+    const documentId = randomUUID();
+    const storageKey = storage.storageKeyFor(documentId, contentType);
+    // Uploaded before the row is committed: a stored object with no row is
+    // collectable garbage, while a row pointing at bytes that never arrived
+    // would dead-letter the pipeline on every retry.
+    await storage.put(storageKey, file.buffer, contentType);
+    await client.query(
+      `INSERT INTO documents (id, application_id, storage_key, content_type, byte_size, sha256)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [documentId, application.id, storageKey, contentType, file.size, storage.sha256(file.buffer)],
+    );
 
     await recordAudit(
       {
@@ -205,12 +229,12 @@ applicationsRouter.post('/', submitLimiter, upload.single('certificate'), async 
         action: 'application.submitted',
         entityType: 'application',
         entityId: application.id,
-        detail: { cycle, withDocument: documentId !== null },
+        detail: { cycle, withDocument: true, needsConfirmation },
       },
       client,
     );
 
-    return { application, documentId };
+    return { application, documentId, needsConfirmation };
   }).catch((err: unknown) => {
     // The whole transaction rolled back, the account upsert included, and the
     // certificate upload comes after the insert that failed — nothing to clean up.
@@ -229,11 +253,40 @@ applicationsRouter.post('/', submitLimiter, upload.single('certificate'), async 
   }
 
   if (created.documentId) {
-    await enqueueDocument({ documentId: created.documentId, applicationId: created.application.id });
+    try {
+      await enqueueDocument({ documentId: created.documentId, applicationId: created.application.id });
+    } catch (err) {
+      // The application is committed; failing the request now would tell the
+      // applicant to resubmit into a 409. The worker's stuck-document sweep
+      // (pipeline/sweeper.ts) enqueues any document that never started.
+      console.error(`[applications] enqueue failed for ${created.documentId}; the sweep will pick it up`, err);
+    }
   }
 
-  res.status(201).json(toApplicantView(created.application, created.documentId ? 1 : 0));
+  const body: Record<string, unknown> = {
+    ...toApplicantView(created.application, created.documentId ? 1 : 0),
+    confirmationRequired: created.needsConfirmation,
+  };
+
+  if (created.needsConfirmation) {
+    const delivery = await sendMail(confirmationMessage(input.email, confirmation.token)).catch(
+      (err: unknown) => {
+        // The application stands; the applicant can ask for a fresh link from
+        // the status page, which confirms the address just the same.
+        console.error('[applications] confirmation mail failed', err);
+        return null;
+      },
+    );
+    if (config.NODE_ENV !== 'production' && delivery?.via === 'log') body.devToken = confirmation.token;
+  }
+
+  res.status(201).json(body);
 });
+
+/** A confirmation link is read at the applicant's leisure, not within minutes. */
+function confirmationExpiry(): Date {
+  return new Date(Date.now() + 3 * 86_400_000);
+}
 
 /* ------------------------------------------------------------------ staff */
 
@@ -553,8 +606,8 @@ applicationsRouter.post('/:id/review', requireStaff(), async (req, res) => {
 
   const outcome = await withTransaction(async (client) => {
     // Lock the row so two reviewers cannot decide the same application at once.
-    const { rows } = await client.query<{ status: string }>(
-      `SELECT status FROM applications WHERE id = $1 FOR UPDATE`,
+    const { rows } = await client.query<{ status: string; cycle: string }>(
+      `SELECT status, cycle FROM applications WHERE id = $1 FOR UPDATE`,
       [params.data.id],
     );
     const current = rows[0];
@@ -596,7 +649,7 @@ applicationsRouter.post('/:id/review', requireStaff(), async (req, res) => {
       client,
     );
 
-    return { kind: 'ok' as const, review: reviews[0]! };
+    return { kind: 'ok' as const, review: reviews[0]!, cycle: current.cycle };
   });
 
   if (outcome.kind === 'not_found') {
@@ -609,6 +662,14 @@ applicationsRouter.post('/:id/review', requireStaff(), async (req, res) => {
       message: `This application was already ${outcome.status}. Decisions are append-only.`,
     });
     return;
+  }
+
+  if (decision === 'trash') {
+    // A trashed application is not a real one, so it leaves the population the
+    // rules read (household/service.ts). Every contradiction it caused on a
+    // real applicant — a fake "sibling" with a different income — has to be
+    // withdrawn now, not whenever the cycle next happens to be rescored.
+    await rescoreCycle(outcome.cycle, reviewerId);
   }
 
   res.status(201).json(toReviewRecord(outcome.review));

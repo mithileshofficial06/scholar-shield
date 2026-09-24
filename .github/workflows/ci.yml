@@ -86,7 +86,9 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: apps/ocr-service/requirements.txt
+          cache-dependency-path: |
+            apps/ocr-service/requirements.txt
+            apps/ocr-service/requirements-dev.txt
 
       # Tesseract is a system binary rather than a wheel, and the extraction
       # tests are meaningless without it — skipping them here would recreate
@@ -101,7 +103,7 @@ jobs:
         working-directory: apps/ocr-service
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
 
       # The `slow` marker is deselected by pytest.ini: those tests need the
       # generated corpus, which is built by `npm run seed:documents` and is not

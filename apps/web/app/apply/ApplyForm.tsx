@@ -28,6 +28,10 @@ interface Submitted {
   stage: string;
   submittedAt: string;
   documentCount: number;
+  /** A first submission from this address: review waits until the emailed link is used. */
+  confirmationRequired?: boolean;
+  /** Local development only, when no mail server is configured. */
+  devToken?: string;
 }
 
 type FieldErrors = Partial<Record<string, string[]>>;
@@ -306,6 +310,22 @@ export function ApplyForm({ existing }: { existing: ApplicantApplicationView[] }
                 <p>
                   Reference <strong className="tabular">{submitted.id}</strong>
                 </p>
+                {submitted.confirmationRequired ? (
+                  <p role="status">
+                    <strong>One more step:</strong> we have emailed you a link. Open it to confirm the
+                    address is yours &mdash; your application is not reviewed until you do.
+                    {submitted.devToken ? (
+                      <>
+                        {' '}
+                        (Development: no mail server is configured, so{' '}
+                        <Link href={`/status?token=${encodeURIComponent(submitted.devToken)}`}>
+                          confirm here
+                        </Link>
+                        .)
+                      </>
+                    ) : null}
+                  </p>
+                ) : null}
                 <p>
                   To check progress later, request a sign-in link with the email address you used.
                 </p>

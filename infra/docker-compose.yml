@@ -9,7 +9,10 @@ services:
       POSTGRES_PASSWORD: scholarshield
       POSTGRES_DB: scholarshield
     ports:
-      - "5432:5432"
+      # Overridable because a natively installed Postgres commonly holds 5432
+      # already, and then every host-side connection silently reaches the wrong
+      # server. Set POSTGRES_HOST_PORT in .env (and DATABASE_URL to match).
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -116,7 +119,7 @@ services:
       DATABASE_URL: postgresql://scholarshield:scholarshield@postgres:5432/scholarshield
       # config.ts is loaded transitively by db.ts and enforces its production
       # guards on import, so even the migrator has to satisfy them.
-      JWT_SECRET: compose-demo-secret-change-me-before-anything-real
+      JWT_SECRET: ${JWT_SECRET:-compose-demo-secret-change-me-before-anything-real}
       SMTP_URL: smtp://mailpit:1025
     command: ["node", "apps/api/dist/migrate.js"]
     restart: "no"
@@ -142,18 +145,22 @@ services:
       # Keeping the API in development mode makes the known demo secret
       # unusable for a real deployment, where config.ts rejects it at boot.
       NODE_ENV: development
-      DATABASE_URL: postgresql://scholarshield:scholarshield@postgres:5432/scholarshield
+      DATABASE_URL: postgresql://scholarshield_app:scholarshield_app@postgres:5432/scholarshield
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://minio:9000
       S3_ACCESS_KEY: scholarshield
       S3_SECRET_KEY: scholarshield
       S3_BUCKET: scholarshield-documents
+      # Signed document URLs are opened by the reviewer's BROWSER, which cannot
+      # resolve the private name minio. Sign them against the published port.
+      S3_PUBLIC_ENDPOINT: http://localhost:9000
       OCR_SERVICE_URL: http://ocr-service:8000
-      WEB_BASE_URL: http://localhost:3000
+      WEB_ORIGIN: http://localhost:3000
       SMTP_URL: smtp://mailpit:1025
-      # Demo-only. config.ts refuses to boot in production on a dev secret, and
-      # a real deployment must set this from a secret store, not a compose file.
-      JWT_SECRET: compose-demo-secret-change-me-before-anything-real
+      # Read from the repository-root .env (npm run docker:up passes it). The
+      # fallback is demo-only: config.ts refuses to boot in production on it.
+      JWT_SECRET: ${JWT_SECRET:-compose-demo-secret-change-me-before-anything-real}
+      TIP_HASH_SECRET: ${TIP_HASH_SECRET:-}
 
   # Same image as the API, different command. They share the rule engine, so
   # building them separately would mean two artifacts that must not drift.
@@ -169,7 +176,7 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: development
-      DATABASE_URL: postgresql://scholarshield:scholarshield@postgres:5432/scholarshield
+      DATABASE_URL: postgresql://scholarshield_app:scholarshield_app@postgres:5432/scholarshield
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://minio:9000
       S3_ACCESS_KEY: scholarshield
@@ -177,8 +184,17 @@ services:
       S3_BUCKET: scholarshield-documents
       OCR_SERVICE_URL: http://ocr-service:8000
       SMTP_URL: smtp://mailpit:1025
-      JWT_SECRET: compose-demo-secret-change-me-before-anything-real
+      JWT_SECRET: ${JWT_SECRET:-compose-demo-secret-change-me-before-anything-real}
     command: ["node", "apps/api/dist/pipeline/main.js"]
+    # The image's HEALTHCHECK probes the API's HTTP port, which the worker does
+    # not serve — inherited unchanged it marks a working worker unhealthy
+    # forever. The worker's liveness is its queue, so check it can reach Redis.
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(6379,'redis').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   web:
     build:

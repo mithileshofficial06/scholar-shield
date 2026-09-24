@@ -49,6 +49,32 @@ export function RetryButton({ documentId, stage }: { documentId: string; stage: 
   );
 }
 
+/** Remove a reviewer's access, or restore it. Deactivation ends their sessions at once. */
+export function StaffAccessButton({ userId, deactivated }: { userId: string; deactivated: boolean }) {
+  const { busy, error, run } = useRowAction();
+  return (
+    <div className="row-action">
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm"
+        disabled={busy}
+        onClick={() => {
+          if (deactivated) {
+            void run(`/api/proxy/admin/users/${userId}/reactivate`, { method: 'POST' });
+          } else if (
+            window.confirm('Deactivate this account? They are signed out everywhere immediately and cannot sign in again.')
+          ) {
+            void run(`/api/proxy/admin/users/${userId}/deactivate`, { method: 'POST' });
+          }
+        }}
+      >
+        {busy ? 'Saving…' : deactivated ? 'Reactivate' : 'Deactivate'}
+      </button>
+      {error ? <p className="row-action-error" role="alert">{error}</p> : null}
+    </div>
+  );
+}
+
 /** Withdraw an invitation nobody has accepted yet. */
 export function WithdrawInviteButton({ userId }: { userId: string }) {
   const { busy, error, run } = useRowAction();

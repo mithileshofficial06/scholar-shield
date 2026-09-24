@@ -42,13 +42,17 @@ interface UserRow {
   invited_by: string | null;
   invite_expires_at: Date | null;
   created_at: Date;
+  deactivated_at: Date | null;
 }
+
+const USER_COLUMNS = `id, email, role, activated_at, invited_by, invite_expires_at, created_at, deactivated_at`;
 
 const toStaffUser = (row: UserRow): StaffUser => ({
   id: row.id,
   email: row.email,
   role: row.role,
   activatedAt: iso(row.activated_at),
+  deactivatedAt: iso(row.deactivated_at),
   invitedBy: row.invited_by,
   inviteExpiresAt: iso(row.invite_expires_at),
   createdAt: new Date(row.created_at).toISOString(),
@@ -58,10 +62,117 @@ const toStaffUser = (row: UserRow): StaffUser => ({
 
 adminRouter.get('/users', requireStaff('admin'), async (_req, res) => {
   const { rows } = await query<UserRow>(
-    `SELECT id, email, role, activated_at, invited_by, invite_expires_at, created_at
-       FROM users ORDER BY created_at ASC`,
+    `SELECT ${USER_COLUMNS} FROM users ORDER BY created_at ASC`,
   );
   res.json({ items: rows.map(toStaffUser) });
+});
+
+const userIdParam = z.object({ id: z.string().uuid() });
+
+/**
+ * Remove a reviewer's access.
+ *
+ * Not a delete: their decisions and audit rows name them, and a foreign key to
+ * a vanished user would make those records unreadable. The account is refused
+ * at sign-in, and bumping session_version revokes every token they already
+ * hold, so access ends on their next request rather than when a session expires.
+ */
+adminRouter.post('/users/:id/deactivate', requireStaff('admin'), async (req, res) => {
+  const parsed = userIdParam.safeParse(req.params);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'invalid_request', message: 'Bad user id.' });
+    return;
+  }
+  const actorId = req.session!.sub;
+  if (parsed.data.id === actorId) {
+    res.status(409).json({ error: 'self', message: 'You cannot deactivate your own account.' });
+    return;
+  }
+
+  const outcome = await withTransaction(async (client) => {
+    // Serialise admin changes so two admins cannot deactivate each other and
+    // leave nobody able to manage staff.
+    await client.query(`SELECT pg_advisory_xact_lock(hashtext('staff-admin-changes'))`);
+    const { rows } = await client.query<UserRow>(
+      `SELECT ${USER_COLUMNS} FROM users WHERE id = $1 FOR UPDATE`,
+      [parsed.data.id],
+    );
+    const target = rows[0];
+    if (!target) return { kind: 'not_found' as const };
+    if (!target.activated_at) return { kind: 'pending' as const };
+    if (target.deactivated_at) return { kind: 'already' as const };
+
+    if (target.role === 'admin') {
+      const { rows: admins } = await client.query<{ n: string }>(
+        `SELECT count(*)::text AS n FROM users
+          WHERE role = 'admin' AND activated_at IS NOT NULL AND deactivated_at IS NULL`,
+      );
+      if (Number(admins[0]!.n) <= 1) return { kind: 'last_admin' as const };
+    }
+
+    const { rows: updated } = await client.query<UserRow>(
+      `UPDATE users SET deactivated_at = now(), session_version = session_version + 1
+        WHERE id = $1 RETURNING ${USER_COLUMNS}`,
+      [parsed.data.id],
+    );
+    await recordAudit(
+      {
+        actorId,
+        actorType: 'user',
+        action: 'user.deactivated',
+        entityType: 'user',
+        entityId: parsed.data.id,
+        detail: { email: target.email, role: target.role },
+      },
+      client,
+    );
+    return { kind: 'ok' as const, user: updated[0]! };
+  });
+
+  switch (outcome.kind) {
+    case 'not_found':
+      res.status(404).json({ error: 'not_found', message: 'No such user.' });
+      return;
+    case 'pending':
+      res.status(409).json({ error: 'not_active', message: 'Withdraw a pending invitation instead.' });
+      return;
+    case 'already':
+      res.status(409).json({ error: 'already_deactivated', message: 'That account is already deactivated.' });
+      return;
+    case 'last_admin':
+      res.status(409).json({ error: 'last_admin', message: 'This is the only active admin. Promote someone else first.' });
+      return;
+    case 'ok':
+      res.json({ user: toStaffUser(outcome.user) });
+  }
+});
+
+/** Restore a deactivated account. Their old sessions stay revoked. */
+adminRouter.post('/users/:id/reactivate', requireStaff('admin'), async (req, res) => {
+  const parsed = userIdParam.safeParse(req.params);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'invalid_request', message: 'Bad user id.' });
+    return;
+  }
+
+  const { rows } = await query<UserRow>(
+    `UPDATE users SET deactivated_at = NULL
+      WHERE id = $1 AND deactivated_at IS NOT NULL RETURNING ${USER_COLUMNS}`,
+    [parsed.data.id],
+  );
+  if (!rows[0]) {
+    res.status(409).json({ error: 'not_deactivated', message: 'That account is not deactivated.' });
+    return;
+  }
+
+  await recordAudit({
+    actorId: req.session!.sub,
+    actorType: 'user',
+    action: 'user.reactivated',
+    entityType: 'user',
+    entityId: parsed.data.id,
+  });
+  res.json({ user: toStaffUser(rows[0]) });
 });
 
 const inviteSchema = z.object({
@@ -104,7 +215,7 @@ adminRouter.post('/users/invite', requireStaff('admin'), async (req, res) => {
            invited_by = EXCLUDED.invited_by,
            invite_token = EXCLUDED.invite_token,
            invite_expires_at = EXCLUDED.invite_expires_at
-     RETURNING id, email, role, activated_at, invited_by, invite_expires_at, created_at`,
+     RETURNING ${USER_COLUMNS}`,
     [parsed.data.email, parsed.data.role, actorId, tokenHash, expiresAt],
   );
 

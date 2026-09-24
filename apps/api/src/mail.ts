@@ -88,6 +88,27 @@ export function magicLinkMessage(to: string, token: string): MailMessage {
   };
 }
 
+/**
+ * Sent once, on a first submission from a new address. The link is an ordinary
+ * sign-in link; using it is what confirms the address (migration 007).
+ */
+export function confirmationMessage(to: string, token: string): MailMessage {
+  const url = link('/status', token);
+  return {
+    to,
+    subject: 'Confirm your scholarship application',
+    text: [
+      'We received a scholarship application that gave this email address.',
+      'Open this link to confirm it is yours — your application is not reviewed until you do:',
+      '',
+      url,
+      '',
+      'The link works for 3 days. After that, request a new one from the status page.',
+      'If you did not apply, ignore this message and nothing further will happen.',
+    ].join('\n'),
+  };
+}
+
 export function inviteMessage(to: string, token: string, role: string): MailMessage {
   const url = link('/accept-invite', token);
   return {
@@ -98,7 +119,7 @@ export function inviteMessage(to: string, token: string, role: string): MailMess
       '',
       url,
       '',
-      'This invitation expires in 7 days.',
+      `This invitation expires in ${config.INVITE_TTL_DAYS} day${config.INVITE_TTL_DAYS === 1 ? '' : 's'}.`,
       'ScholarShield shows reviewers risk signals only. Every decision remains yours,',
       'requires a written reason, and is recorded in an append-only audit log.',
     ].join('\n'),

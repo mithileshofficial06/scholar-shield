@@ -1,5 +1,23 @@
-import 'dotenv/config';
+import { fileURLToPath } from 'node:url';
+
+import { config as loadEnv } from 'dotenv';
 import { z } from 'zod';
+
+// The repository-root .env, found relative to this file (src/ in development,
+// dist/ when built — both three levels below the root). `dotenv/config` looked
+// in the working directory instead, and npm runs workspace scripts from
+// apps/api, so `npm run dev`, `seed` and `migrate` never read the root .env and
+// silently ran on defaults. Real environment variables still win: dotenv does
+// not override them, which is how the containers are configured.
+loadEnv({ path: fileURLToPath(new URL('../../../.env', import.meta.url)), quiet: true });
+
+/**
+ * An optional variable set to the empty string is unset. Compose passes
+ * `${NAME:-}` through as "", which would otherwise fail its format check and
+ * stop the process at boot over a value nobody meant to give.
+ */
+const optional = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((value) => (value === '' ? undefined : value), schema.optional());
 
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -20,7 +38,15 @@ const schema = z.object({
   S3_BUCKET: z.string().default('scholarshield-documents'),
   S3_ACCESS_KEY: z.string().default('scholarshield'),
   S3_SECRET_KEY: z.string().default('scholarshield'),
-  S3_FORCE_PATH_STYLE: z.coerce.boolean().default(true),
+  // Not z.coerce.boolean(): that is Boolean(value), and Boolean('false') is true.
+  S3_FORCE_PATH_STYLE: z
+    .enum(['true', 'false', '1', '0'])
+    .default('true')
+    .transform((value) => value === 'true' || value === '1'),
+  // Where a BROWSER reaches object storage, for signed document URLs. Differs
+  // from S3_ENDPOINT whenever the API reaches storage over a private network
+  // name (http://minio:9000 in compose) that a reviewer's browser cannot resolve.
+  S3_PUBLIC_ENDPOINT: optional(z.string().url()),
 
   OCR_SERVICE_URL: z.string().default('http://localhost:8000'),
 
@@ -31,7 +57,7 @@ const schema = z.object({
     .default('https://tnedistrict.tn.gov.in/tneda/verify.xhtml'),
 
   // Mail. Absent locally on purpose — see mail.ts. Required in production.
-  SMTP_URL: z.string().optional(),
+  SMTP_URL: optional(z.string()),
   MAIL_FROM: z.string().default('ScholarShield <no-reply@scholarshield.local>'),
   INVITE_TTL_DAYS: z.coerce.number().int().positive().default(7),
 
@@ -39,6 +65,10 @@ const schema = z.object({
   MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(12 * 1024 * 1024),
 
   JWT_SECRET: z.string().min(32).default('dev-only-secret-do-not-use-in-production'),
+  // Keys the anonymous-tip submitter hash. Separate from JWT_SECRET so rotating
+  // session signing does not break abuse matching, and so one leaked secret
+  // does not unlock both. Falls back to JWT_SECRET when unset.
+  TIP_HASH_SECRET: optional(z.string().min(32)),
   MAGIC_LINK_TTL_MINUTES: z.coerce.number().int().positive().default(20),
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(12),
 
@@ -46,7 +76,7 @@ const schema = z.object({
 
   SCHOLARSHIP_INCOME_CEILING: z.coerce.number().int().positive().default(250_000),
   CYCLE_DEADLINE: z.string().default('2026-07-31'),
-  /** The cycle a new submission joins when the form does not name one. */
+  /** The cycle every public submission joins. Set by the server, never the form. */
   CURRENT_CYCLE: z.string().regex(/^\d{4}$/).default('2026'),
 });
 

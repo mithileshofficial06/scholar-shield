@@ -16,7 +16,7 @@ import type { RuleFinding } from '../household/rules.js';
 
 import { recordAudit } from '../audit.js';
 import { config } from '../config.js';
-import { query, withTransaction, type QueryParam } from '../db.js';
+import { pool, query, withTransaction, type QueryParam } from '../db.js';
 import {
   componentFor,
   detectComponents,
@@ -52,6 +52,7 @@ interface ApplicationRow {
   normalized_address: string | null;
   normalized_phone: string | null;
   pincode: string | null;
+  risk_score: string;
   /** The latest document that OCR has read, and what the pipeline learned from it. */
   certificate_fields: Record<string, { value: string | null; confidence: number } | undefined> | null;
   ocr_report: { incomeWordsMismatch?: boolean | null; pageConfidence?: number | null; wordCount?: number | null } | null;
@@ -60,8 +61,66 @@ interface ApplicationRow {
   verification_status: ScorableApplication['verificationStatus'];
 }
 
+/**
+ * The population the engine reads: every application in the cycle that is a
+ * real claim by a reachable person.
+ *
+ * Two kinds are left out, and both omissions protect other applicants:
+ *   - trashed — a reviewer ruled it was never a real application. A junk
+ *     "sibling" with a different income must not keep a real applicant flagged.
+ *   - unconfirmed — a public submission whose email owner has not used the link
+ *     sent to it (migration 007). Anyone can type any address into the form, so
+ *     until then it could be anyone's, filed to raise someone else's score.
+ */
 async function applicationsInCycle(cycle: string): Promise<ApplicationRow[]> {
-  return selectApplications('a.cycle = $1', [cycle]);
+  return selectApplications(
+    `a.cycle = $1
+       AND a.status <> 'trashed'
+       AND EXISTS (SELECT 1 FROM applicants p
+                    WHERE p.id = a.applicant_id AND p.email_confirmed_at IS NOT NULL)`,
+    [cycle],
+  );
+}
+
+/**
+ * Run `fn` holding the engine's lock for one cycle.
+ *
+ * Resolution reads the whole cycle and then rewrites household membership from
+ * that read. Two workers doing it at once could each read before the other
+ * wrote, and whichever wrote last replaced the other's result with a snapshot
+ * that lacked the other's application — silently dropping it from its
+ * household. Locking only the write did not help: the stale read had already
+ * happened. So the lock spans the read and the write.
+ *
+ * A session-level advisory lock on a dedicated connection, taken with
+ * pg_try_advisory_lock in a loop. A blocking pg_advisory_lock would park each
+ * waiter on a pooled connection; enough waiters in one process and the holder
+ * could not get a connection to finish its own work — a deadlock made of pool
+ * exhaustion. Waiters here hold no connection between attempts.
+ */
+async function withCycleLock<T>(cycle: string, fn: () => Promise<T>): Promise<T> {
+  const key = `cycle-engine:${cycle}`;
+  for (;;) {
+    const client = await pool.connect();
+    let acquired = false;
+    try {
+      const { rows } = await client.query<{ locked: boolean }>(
+        `SELECT pg_try_advisory_lock(hashtext($1)) AS locked`,
+        [key],
+      );
+      acquired = rows[0]?.locked === true;
+      if (acquired) {
+        try {
+          return await fn();
+        } finally {
+          await client.query(`SELECT pg_advisory_unlock(hashtext($1))`, [key]);
+        }
+      }
+    } finally {
+      client.release();
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100 + Math.random() * 150));
+  }
 }
 
 /**
@@ -77,7 +136,7 @@ async function selectApplications(where: string, params: QueryParam[]): Promise<
             a.district, a.pincode, a.declared_annual_income, a.declared_family_size, a.certificate_id,
             a.issuing_office, a.certificate_issue_date,
             a.normalized_applicant_name, a.normalized_guardian_name,
-            a.normalized_address, a.normalized_phone,
+            a.normalized_address, a.normalized_phone, a.risk_score,
             d.extracted_fields AS certificate_fields, d.ocr_report, d.tamper_score, d.forensics,
             v.status AS verification_status
        FROM applications a
@@ -215,6 +274,13 @@ export async function reconcileCycle(
   cycle: string,
   focusApplicationId: string | null = null,
 ): Promise<ReconcileResult> {
+  return withCycleLock(cycle, () => reconcileCycleLocked(cycle, focusApplicationId));
+}
+
+async function reconcileCycleLocked(
+  cycle: string,
+  focusApplicationId: string | null,
+): Promise<ReconcileResult> {
   const rows = await ensureNormalized(await applicationsInCycle(cycle));
 
   const pairs = linkedPairs(rows.map(toResolutionInput));
@@ -302,9 +368,8 @@ async function persistComponents(
   components: HouseholdComponent[],
 ): Promise<void> {
   await withTransaction(async (client) => {
-    // Two workers reconciling one cycle at once would each rebuild membership
-    // from their own snapshot and interleave. Serialize per cycle.
-    await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [cycle]);
+    // Serialisation is the caller's: reconcileCycle holds the cycle lock across
+    // the read this membership was computed from, not just this write.
 
     // Membership is rebuilt from scratch on every run. Without clearing it, an
     // application whose household was split — a reviewer rejecting the only
@@ -355,10 +420,29 @@ export interface ScoreResult {
  * The `ON CONFLICT DO NOTHING` on that triple is what makes re-running the stage
  * safe under at-least-once delivery.
  */
+type ScoreAudit = { actorId: string | null; actorType: 'user' | 'system'; entityType: string; entityId: string };
+
 export async function scoreApplications(
   cycle: string,
   applicationIds: string[],
-  audit: { actorId: string | null; actorType: 'user' | 'system'; entityType: string; entityId: string },
+  audit: ScoreAudit,
+): Promise<ScoreResult> {
+  return withCycleLock(cycle, () => scoreApplicationsLocked(cycle, applicationIds, audit));
+}
+
+/** What a stored score claims: its flags as written, and the number. */
+function flagSignature(
+  flags: Array<{ ruleId: string; version: string; weight: number; reason: string }>,
+  score: number,
+): string {
+  const parts = flags.map((f) => `${f.ruleId}|${f.version}|${f.weight}|${f.reason}`).sort();
+  return `${score}::${parts.join('\n')}`;
+}
+
+async function scoreApplicationsLocked(
+  cycle: string,
+  applicationIds: string[],
+  audit: ScoreAudit,
 ): Promise<ScoreResult> {
   const rulesConfig = loadRulesConfig();
   const rows = await ensureNormalized(await applicationsInCycle(cycle));
@@ -392,9 +476,64 @@ export async function scoreApplications(
     findingsByApplication.set(finding.applicationId, bucket);
   }
 
+  // Which applications to write.
+  //
+  // The requested ones — the household the new upload landed in — always. But
+  // the evaluation above is cycle-wide, and several rules reach ACROSS
+  // households: a reused certificate number, one guardian with two incomes, a
+  // shared phone, an address cluster, the population rules. When the new
+  // application trips one of those, the application on the other side was
+  // flagged by this evaluation too, and writing only the new household left
+  // that finding unwritten — the application already in the queue never moved.
+  // So every application whose stored flags or score differ from what the
+  // engine now says is written as well. Comparing first keeps an upload from
+  // rewriting a whole cycle's rows when almost none of them changed.
+  const population = new Set(rows.map((row) => row.id));
+  const { rows: stored } = await query<{
+    application_id: string;
+    rule_id: string;
+    rule_config_version: string;
+    weight: string;
+    reason: string;
+  }>(
+    `SELECT application_id, rule_id, rule_config_version, weight, reason
+       FROM risk_flags WHERE application_id = ANY($1::uuid[])`,
+    [[...population]],
+  );
+  const storedFlags = new Map<string, Array<{ ruleId: string; version: string; weight: number; reason: string }>>();
+  for (const flag of stored) {
+    const bucket = storedFlags.get(flag.application_id) ?? [];
+    bucket.push({
+      ruleId: flag.rule_id,
+      version: flag.rule_config_version,
+      weight: Number(flag.weight),
+      reason: flag.reason,
+    });
+    storedFlags.set(flag.application_id, bucket);
+  }
+
+  // Requested ids outside the population — an unconfirmed or trashed
+  // application — are not scored: scoring would mark an unconfirmed one ready
+  // for review with a zero no rule ever computed.
+  const requested = new Set(applicationIds.filter((id) => population.has(id)));
+  const target = new Set(requested);
+  for (const row of rows) {
+    if (target.has(row.id)) continue;
+    const now = flagSignature(
+      (findingsByApplication.get(row.id) ?? []).map((f) => ({
+        ruleId: f.ruleId,
+        version: rulesConfig.version,
+        weight: f.weight,
+        reason: f.reason,
+      })),
+      evaluation.scores.get(row.id) ?? 0,
+    );
+    const before = flagSignature(storedFlags.get(row.id) ?? [], Number(row.risk_score));
+    if (now !== before) target.add(row.id);
+  }
+
   let flagsWritten = 0;
   const scored: string[] = [];
-  const target = new Set(applicationIds);
 
   for (const applicationId of target) {
     const findings = findingsByApplication.get(applicationId) ?? [];
@@ -447,10 +586,13 @@ export async function scoreApplications(
       await client.query(
         `UPDATE applications
             SET risk_score = $2, scored_at = now(),
-                status = CASE WHEN status IN ('submitted', 'processing')
+                status = CASE WHEN $3::bool AND status IN ('submitted', 'processing')
                               THEN 'ready_for_review' ELSE status END
           WHERE id = $1`,
-        [applicationId, evaluation.scores.get(applicationId) ?? 0],
+        // Only a requested application is promoted into the queue. One written
+        // because a neighbour changed its findings may still be mid-pipeline;
+        // its own run promotes it when its document has been read.
+        [applicationId, evaluation.scores.get(applicationId) ?? 0, requested.has(applicationId)],
       );
     });
 

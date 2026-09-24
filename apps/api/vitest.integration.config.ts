@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+
 import { config as loadEnv } from 'dotenv';
 import { defineConfig } from 'vitest/config';
 
@@ -27,7 +29,10 @@ import { defineConfig } from 'vitest/config';
  * in parallel would have them delete each other's rows.
  */
 
-loadEnv({ path: new URL('../../.env', import.meta.url).pathname, quiet: true });
+// fileURLToPath, not URL.pathname: on Windows the pathname is "/C:/…", which
+// dotenv cannot open — and with `quiet` it says nothing, so the defaults
+// silently took over and pointed the suite at whatever held port 5432.
+loadEnv({ path: fileURLToPath(new URL('../../.env', import.meta.url)), quiet: true });
 
 const DEFAULT_URL = 'postgresql://scholarshield:scholarshield@localhost:5432/scholarshield';
 

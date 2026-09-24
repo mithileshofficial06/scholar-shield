@@ -9,6 +9,7 @@
 import { closePool } from '../db.js';
 import { startRetentionSchedule } from '../jobs/retention.js';
 import { closeQueue } from './queue.js';
+import { startSweepSchedule } from './sweeper.js';
 import { startWorker } from './worker.js';
 
 const worker = startWorker();
@@ -17,7 +18,11 @@ const worker = startWorker();
 // OCR does: slow, periodic, and no HTTP request should wait for it.
 startRetentionSchedule();
 
-console.log('scholarshield-worker started (pipeline + retention sweep)');
+// Documents that fell out of the pipeline without dead-lettering: an enqueue
+// that failed after its submission committed, or a job lost with its Redis.
+startSweepSchedule();
+
+console.log('scholarshield-worker started (pipeline + retention + stuck-document sweeps)');
 
 async function shutdown(signal: string): Promise<void> {
   console.log(`${signal} received, draining pipeline worker.`);

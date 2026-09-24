@@ -16,6 +16,12 @@ export interface StaffClaims {
   kind: 'staff';
   sub: string;
   role: UserRole;
+  /**
+   * users.session_version when the token was issued. requireStaff compares it
+   * on every request, so deactivating an account or signing out everywhere
+   * revokes tokens already in circulation instead of waiting out their TTL.
+   */
+  sv: number;
 }
 
 export interface ApplicantClaims {

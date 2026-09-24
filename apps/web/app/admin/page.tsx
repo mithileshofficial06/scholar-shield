@@ -6,7 +6,7 @@ import { AlertIcon, LockIcon } from '../components/Icons';
 import { apiGet, getSession } from '../lib/session';
 import { ImportForm } from './ImportForm';
 import { InviteForm } from './InviteForm';
-import { RetryButton, WithdrawInviteButton } from './RowActions';
+import { RetryButton, StaffAccessButton, WithdrawInviteButton } from './RowActions';
 
 /**
  * The admin console.
@@ -60,12 +60,15 @@ export default async function AdminPage() {
   }
 
   const isAdmin = session.role === 'admin';
-  const [cycles, rules, deadLetters, users] = await Promise.all([
+  const [cycles, rules, deadLetters, users, me] = await Promise.all([
     apiGet<{ items: CycleSummary[]; current: string }>('/admin/cycles'),
     apiGet<RulesResponse>('/admin/rules'),
     apiGet<{ items: DeadLetter[] }>('/pipeline/dead-letters'),
     isAdmin ? apiGet<{ items: StaffUser[] }>('/admin/users') : Promise.resolve(null),
+    apiGet<{ sub: string }>('/auth/me'),
   ]);
+  // The API refuses self-deactivation too; this just avoids offering it.
+  const viewerId = me.kind === 'ok' ? me.data.sub : null;
 
   if (cycles.kind === 'unreachable') {
     return <Locked title="The API is not responding" body="Start it with npm run dev, then reload this page." />;
@@ -75,7 +78,7 @@ export default async function AdminPage() {
   const currentCycle = cycles.kind === 'ok' ? cycles.data.current : '';
   const stuck = deadLetters.kind === 'ok' ? deadLetters.data.items : [];
   const staff = users?.kind === 'ok' ? users.data.items : [];
-  const pendingInvites = staff.filter((u) => !u.activatedAt).length;
+  const pendingInvites = staff.filter((u) => !u.activatedAt && !u.deactivatedAt).length;
   const current = cycleItems.find((c) => c.cycle === currentCycle);
 
   const stats = [
@@ -224,14 +227,18 @@ export default async function AdminPage() {
                         <p className="admin-item-title">
                           <strong>{user.email}</strong>
                           <span className="tag">{user.role}</span>
-                          {user.activatedAt ? (
+                          {user.deactivatedAt ? (
+                            <span className="sev-pill sev-high">deactivated</span>
+                          ) : user.activatedAt ? (
                             <span className="sev-pill sev-low">active</span>
                           ) : (
                             <span className="sev-pill sev-medium">invited</span>
                           )}
                         </p>
                         <p className="admin-item-meta">
-                          {user.activatedAt
+                          {user.deactivatedAt
+                            ? `Deactivated ${new Date(user.deactivatedAt).toLocaleDateString('en-IN')}`
+                            : user.activatedAt
                             ? `Active since ${new Date(user.activatedAt).toLocaleDateString('en-IN')}`
                             : user.inviteExpiresAt
                               ? `Invitation expires ${new Date(user.inviteExpiresAt).toLocaleDateString('en-IN')}`
@@ -239,6 +246,9 @@ export default async function AdminPage() {
                         </p>
                       </div>
                       {!user.activatedAt && user.inviteExpiresAt ? <WithdrawInviteButton userId={user.id} /> : null}
+                      {user.activatedAt && user.id !== viewerId ? (
+                        <StaffAccessButton userId={user.id} deactivated={Boolean(user.deactivatedAt)} />
+                      ) : null}
                     </li>
                   ))}
                 </ul>

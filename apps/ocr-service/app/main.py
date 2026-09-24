@@ -98,9 +98,11 @@ def _forensics(raw: bytes) -> ForensicsReport:
     return forensics.analyze(_load_image(raw), raw, settings)
 
 
-async def _read_upload(upload: UploadFile) -> bytes:
+def _read_upload(upload: UploadFile) -> bytes:
     settings = get_settings()
-    raw = await upload.read()
+    # The underlying spooled file, read synchronously: this runs on a worker
+    # thread (see the note on the endpoints below), not on the event loop.
+    raw = upload.file.read()
     if not raw:
         raise HTTPException(status_code=400, detail="Empty upload.")
     if len(raw) > settings.max_upload_bytes:
@@ -134,22 +136,30 @@ def health() -> HealthResponse:
     )
 
 
+# The endpoints below are plain `def`, not `async def`, on purpose. Tesseract,
+# Pillow and NumPy are blocking CPU work; inside an `async def` they ran on the
+# event loop itself, so while one certificate was being read the service could
+# not answer anything else — including /health, whose 5-second probe then
+# failed and marked a busy service unhealthy. FastAPI runs a `def` endpoint on
+# its threadpool, which keeps the loop free.
+
+
 @app.post("/extract", response_model=ExtractionReport)
-async def extract(file: UploadFile = File(...)) -> ExtractionReport:
+def extract(file: UploadFile = File(...)) -> ExtractionReport:
     """Field extraction only. Separate from /forensics so the API's pipeline can
     retry one stage without paying for the other."""
-    raw = await _read_upload(file)
+    raw = _read_upload(file)
     return ocr.analyze(_page_image(raw), get_settings())
 
 
 @app.post("/forensics", response_model=ForensicsReport)
-async def analyze_forensics(file: UploadFile = File(...)) -> ForensicsReport:
-    raw = await _read_upload(file)
+def analyze_forensics(file: UploadFile = File(...)) -> ForensicsReport:
+    raw = _read_upload(file)
     return _forensics(raw)
 
 
 @app.post("/analyze", response_model=AnalyzeResponse)
-async def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
+def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
     """
     Both stages in one call.
 
@@ -158,7 +168,7 @@ async def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
     retention), which means a decision stays traceable to a specific file after
     that file is gone.
     """
-    raw = await _read_upload(file)
+    raw = _read_upload(file)
 
     return AnalyzeResponse(
         sha256=hashlib.sha256(raw).hexdigest(),

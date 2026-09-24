@@ -166,7 +166,14 @@ queueRouter.get('/districts', requireStaff(), async (_req, res) => {
 
 /** RFC 4180: double the quotes, wrap anything containing a delimiter. */
 export function csvCell(value: unknown): string {
-  const text = value === null || value === undefined ? '' : String(value);
+  let text = value === null || value === undefined ? '' : String(value);
+  // Formula injection (CWE-1236). Applicant names come from a public form and
+  // this file is opened in Excel, which evaluates a cell starting with = + - @
+  // (or a tab/CR that it strips first) — `=HYPERLINK(...)` in a name field
+  // becomes a live link in the committee's spreadsheet. A leading apostrophe
+  // makes the spreadsheet show the text as typed. Numbers are exempt so a
+  // negative figure stays a number.
+  if (/^[=+\-@\t\r]/.test(text) && !/^-?\d+(\.\d+)?$/.test(text)) text = `'${text}`;
   return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 

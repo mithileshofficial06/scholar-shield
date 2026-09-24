@@ -240,6 +240,8 @@ export interface StaffUser {
   email: string;
   role: UserRole;
   activatedAt: string | null;
+  /** Set when an admin has removed this account's access. */
+  deactivatedAt: string | null;
   invitedBy: string | null;
   inviteExpiresAt: string | null;
   createdAt: string;

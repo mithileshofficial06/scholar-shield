@@ -40,8 +40,19 @@ export const connection: ConnectionOptions = {
   maxRetriesPerRequest: null,
 };
 
+/** Stages in the chain, and attempts each gets before it is dead-lettered. */
+const STAGE_COUNT = 5;
+const ATTEMPTS_PER_STAGE = 4; // stageRunner.MAX_ATTEMPTS
+
 export const defaultJobOptions: JobsOptions = {
-  attempts: 5,
+  // One job carries all five stages, and BullMQ's counter is per job while the
+  // database's is per stage. With the old budget of 5, a flaky OCR stage that
+  // took three tries left the next stage two deliveries — fewer than it needs
+  // to reach dead-letter — so the job died with the stage merely `failed`:
+  // invisible in the admin dead-letter list and never retried. The job budget
+  // now covers every stage exhausting its own attempts, so a stage always
+  // reaches a terminal state the database records.
+  attempts: STAGE_COUNT * ATTEMPTS_PER_STAGE,
   backoff: { type: 'exponential', delay: 2_000 },
   // Keep a bounded history: enough to debug a bad afternoon, not enough to
   // grow unbounded in Redis.
@@ -71,7 +82,21 @@ export function documentQueue(): Queue<DocumentJob> {
  * stage runner would catch it anyway; this stops it from being generated.
  */
 export async function enqueueDocument(job: DocumentJob): Promise<void> {
-  await documentQueue().add('process', job, { jobId: job.documentId });
+  const queue = documentQueue();
+
+  // BullMQ ignores an add whose id already exists — including a job it is
+  // merely keeping in its completed or failed history. A dead-lettered
+  // document's job COMPLETES (the worker stops without throwing), so without
+  // this, "Retry" reset the stage in the database and then enqueued nothing.
+  // A finished job is removed so the new one can take its id; a waiting or
+  // active one is left alone, and the add below collapses into it as intended.
+  const existing = await queue.getJob(job.documentId);
+  if (existing) {
+    const state = await existing.getState();
+    if (state === 'completed' || state === 'failed') await existing.remove();
+  }
+
+  await queue.add('process', job, { jobId: job.documentId });
 }
 
 export async function closeQueue(): Promise<void> {

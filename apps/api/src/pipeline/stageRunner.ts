@@ -173,8 +173,10 @@ export async function runStage<T>(
     const message = err instanceof Error ? err.message : String(err);
     // Exhausted attempts go to the dead-letter state, which the admin UI
     // surfaces. A job that fails silently forever is worse than one that stops
-    // and says so.
-    const exhausted = claimed.attempts >= MAX_ATTEMPTS;
+    // and says so. An error that declares itself permanent — the OCR service
+    // answering 4xx about the document itself — goes there at once: it fails
+    // identically every time, and retrying only delays the human who must look.
+    const exhausted = claimed.attempts >= MAX_ATTEMPTS || isPermanent(err);
     const status: StageStatus = exhausted ? 'dead_lettered' : 'failed';
 
     await query(
@@ -203,6 +205,11 @@ export async function runStage<T>(
       error: message,
     };
   }
+}
+
+/** Errors that carry `retryable: false`, such as OcrServiceError on a 4xx. */
+function isPermanent(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { retryable?: unknown }).retryable === false;
 }
 
 /** Stages sitting in the dead-letter state, for the admin queue. */

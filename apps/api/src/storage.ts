@@ -32,17 +32,28 @@ import { createHash } from 'node:crypto';
 import { config } from './config.js';
 import { extensionFor, type SniffedType } from './uploads.js';
 
-export const s3 = new S3Client({
-  region: config.S3_REGION,
-  endpoint: config.S3_ENDPOINT,
-  // MinIO serves buckets as a path, not a subdomain. Without this the SDK
-  // resolves http://bucket.localhost:9000 and every request fails DNS.
-  forcePathStyle: config.S3_FORCE_PATH_STYLE,
-  credentials: {
-    accessKeyId: config.S3_ACCESS_KEY,
-    secretAccessKey: config.S3_SECRET_KEY,
-  },
-});
+function client(endpoint: string): S3Client {
+  return new S3Client({
+    region: config.S3_REGION,
+    endpoint,
+    // MinIO serves buckets as a path, not a subdomain. Without this the SDK
+    // resolves http://bucket.localhost:9000 and every request fails DNS.
+    forcePathStyle: config.S3_FORCE_PATH_STYLE,
+    credentials: {
+      accessKeyId: config.S3_ACCESS_KEY,
+      secretAccessKey: config.S3_SECRET_KEY,
+    },
+  });
+}
+
+export const s3 = client(config.S3_ENDPOINT);
+
+/**
+ * Signs URLs against the address a browser uses. A presigned URL embeds its
+ * host, so one signed against `http://minio:9000` is valid and unreachable.
+ * Signing is local — this client never opens a connection.
+ */
+const publicS3 = config.S3_PUBLIC_ENDPOINT ? client(config.S3_PUBLIC_ENDPOINT) : s3;
 
 /** Reviewer link lifetime. Long enough to open, short enough not to circulate. */
 const SIGNED_URL_TTL_SECONDS = 300;
@@ -92,7 +103,7 @@ export async function remove(key: string): Promise<void> {
 
 export async function signedReadUrl(key: string): Promise<string> {
   return getSignedUrl(
-    s3,
+    publicS3,
     new GetObjectCommand({ Bucket: config.S3_BUCKET, Key: key }),
     { expiresIn: SIGNED_URL_TTL_SECONDS },
   );
