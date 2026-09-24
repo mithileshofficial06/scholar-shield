@@ -294,6 +294,11 @@ async function reconcileCycleLocked(
         // update from resurrecting one.
         if (rejectedEdgeKeys.has(edgeKey(edge))) continue;
 
+        // Smaller id first (migration 008). The resolver's order follows the
+        // cycle query's row order, which is not stable, and storing it as given
+        // wrote A→B on one run and B→A on the next: every match twice.
+        const [a, b] = [edge.applicationAId, edge.applicationBId].sort();
+
         await client.query(
           `INSERT INTO household_edges
              (application_a_id, application_b_id, match_field, similarity, weight)
@@ -302,8 +307,8 @@ async function reconcileCycleLocked(
              SET similarity = EXCLUDED.similarity, weight = EXCLUDED.weight
            WHERE household_edges.rejected_at IS NULL`,
           [
-            edge.applicationAId,
-            edge.applicationBId,
+            a,
+            b,
             edge.matchField,
             edge.similarity,
             edge.weight,

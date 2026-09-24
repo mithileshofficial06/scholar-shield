@@ -335,6 +335,20 @@ code,
   transition: background 0.15s, border-color 0.15s, box-shadow var(--snap), transform var(--snap);
 }
 
+/* A signed-in admin gets six links, which at laptop widths overflowed the
+   scrolling nav and clipped the last one ("Admin") out of sight. Tighter
+   spacing fits all six without hiding any. */
+@media (min-width: 761px) and (max-width: 1560px) {
+  .nav {
+    gap: 2px;
+  }
+
+  .nav-link {
+    padding: 7px 9px;
+    font-size: 14.5px;
+  }
+}
+
 .nav-link:hover {
   border-color: var(--ink);
   background: var(--surface);

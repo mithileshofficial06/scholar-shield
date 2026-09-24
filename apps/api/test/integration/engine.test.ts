@@ -75,6 +75,18 @@ describe('two workers reconciling one cycle', () => {
     const households = await Promise.all(members.map((m) => application(m.applicationId)));
     expect(households[0]!.household_id).not.toBeNull();
     expect(new Set(households.map((h) => h.household_id)).size).toBe(1);
+
+    // Three reconciliations saw the rows in whatever order Postgres returned
+    // them; each match is still stored once, not once per direction.
+    await rescoreCycle('2026', null);
+    const { rows } = await query<{ total: string; pairs: string }>(
+      `SELECT count(*)::text AS total,
+              count(DISTINCT (least(application_a_id, application_b_id),
+                              greatest(application_a_id, application_b_id), match_field))::text AS pairs
+         FROM household_edges`,
+    );
+    expect(Number(rows[0]!.total)).toBeGreaterThan(0);
+    expect(rows[0]!.total).toBe(rows[0]!.pairs);
   });
 });
 

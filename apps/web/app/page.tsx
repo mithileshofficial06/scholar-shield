@@ -30,8 +30,8 @@ const STACK = [
 ] as const;
 
 const PROOF = [
-  { value: '154', label: 'tests passing' },
-  { value: '17/17', label: 'known cases surfaced' },
+  { value: '338', label: 'tests passing' },
+  { value: '23/23', label: 'known cases surfaced' },
   { value: '0', label: 'automated verdicts' },
 ];
 
@@ -70,18 +70,18 @@ const PIPELINE: { title: string; body: string; tag: string; icon: ReactNode; cor
   {
     title: 'Score and explain',
     body: 'Versioned weighted rules. Every flag carries its reason, rule id and config version.',
-    tag: 'rules.v2.json',
+    tag: 'rules.v5.json',
     icon: <ScaleIcon />,
   },
 ];
 
 const METRICS = [
   { label: 'Known-pattern recall', value: 100, decimals: 0, suffix: '%', note: 'A consistency check, not evidence — the rules were written for these.' },
-  { label: 'Precision in top 10', value: 100, decimals: 0, suffix: '%', note: 'Against a 51.5% base rate of applications that should surface.' },
-  { label: 'Queue lift', value: 1.94, decimals: 2, suffix: '×', note: 'The top 10% of the queue holds real cases 1.94× as often as the queue overall.' },
-  { label: 'OCR field accuracy', value: 92.5, decimals: 1, suffix: '%', note: 'On certificates degraded like real phone photos and scans.' },
-  { label: 'Equity cases passed', value: 7, decimals: 0, suffix: '/7', note: 'Legitimate but irregular families never reach high severity.' },
-  { label: 'Tamper detection AUC', value: 0.51, decimals: 3, suffix: '', note: 'Chance level — so document forensics carries no scoring weight.' },
+  { label: 'Precision in top 10', value: 100, decimals: 0, suffix: '%', note: 'Against a 53.5% base rate of applications that should surface.' },
+  { label: 'Queue lift', value: 1.87, decimals: 2, suffix: '×', note: 'The top 10% of the queue holds real cases 1.87× as often as the queue overall.' },
+  { label: 'OCR field accuracy', value: 91.7, decimals: 1, suffix: '%', note: 'On certificates degraded like real phone photos and scans.' },
+  { label: 'Equity cases passed', value: 9, decimals: 0, suffix: '/9', note: 'Legitimate but irregular families never reach high severity.' },
+  { label: 'Tamper detection AUC', value: 0.502, decimals: 3, suffix: '', note: 'Chance level — so document forensics carries no scoring weight.' },
 ];
 
 const PRINCIPLES = [
@@ -99,8 +99,8 @@ const ROADMAP = [
   { week: 'Week 3', title: 'Synthetic corpus', status: 'done' },
   { week: 'Week 4', title: 'OCR & forensics', status: 'done' },
   { week: 'Week 5', title: 'Scoring & metrics', status: 'done' },
-  { week: 'Week 6', title: 'Review workflow', status: 'active' },
-  { week: 'Week 7', title: 'Polish & deploy', status: 'next' },
+  { week: 'Week 6', title: 'Review workflow', status: 'done' },
+  { week: 'Week 7', title: 'Polish & deploy', status: 'active' },
 ] as const;
 
 const d = (n: number) => ({ '--d': n }) as CSSProperties;
@@ -310,19 +310,20 @@ export default function HomePage() {
 
           <div className="metrics">
             <Reveal className="metric-feature card">
-              <p className="metric-kicker">Holdout recall · the real accuracy</p>
+              <p className="metric-kicker">Sealed-set recall · the clean number</p>
               <p className="metric-hero">
-                <CountUp value={17.6} decimals={1} suffix="%" />
+                <CountUp value={30} decimals={1} suffix="%" />
               </p>
               <div className="meter" aria-hidden="true">
-                <span style={{ '--fill': '17.6%' } as CSSProperties} />
+                <span style={{ '--fill': '30%' } as CSSProperties} />
               </div>
               <p className="metric-feature-sub">
-                <strong>6 of 34</strong> sealed fraud cases surfaced
+                <strong>3 of 10</strong> pre-registered fraud cases surfaced
               </p>
               <p className="metric-feature-body">
-                The rules catch contradictions inside a household. The sealed set also holds seven
-                other fraud patterns they have no rule for — published here rather than hidden.
+                Written against fraud mechanisms no rule targets, before any rule could catch them.
+                The first holdout now reads 70.6%, but its results shaped which rules were built, so
+                it is spent — published as such rather than quoted as accuracy.
               </p>
             </Reveal>
 
@@ -339,7 +340,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          <p className="footnote">Synthetic corpus only · generated 24 Aug 2026 · regenerate with npm run metrics</p>
+          <p className="footnote">Synthetic corpus only · generated 20 Sep 2026 · regenerate with npm run metrics</p>
         </div>
       </section>
 
@@ -376,10 +377,10 @@ export default function HomePage() {
             <span className="eyebrow">
               <span className="eyebrow-num">05</span> Build status
             </span>
-            <h2 className="section-title">Five of seven milestones shipped</h2>
+            <h2 className="section-title">Six of seven milestones shipped</h2>
             <p className="section-lede">
-              The full runtime path is verified: 33 synthetic applications ran through the live
-              pipeline and produced exactly the flags the test harness predicts.
+              The full runtime path runs in Docker: 44 synthetic applications go through the live
+              pipeline end to end, backed by 318 unit and 20 integration tests.
             </p>
           </Reveal>
 

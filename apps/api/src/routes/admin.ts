@@ -279,13 +279,17 @@ adminRouter.get('/cycles', requireStaff(), async (_req, res) => {
     decided: string;
     flagged: string;
   }>(
+    // "Flagged" is an EXISTS, not a join: joining risk_flags produced one row
+    // per flag, so every other count here counted an application once per
+    // flag it carried — 44 applications read as 51.
     `SELECT a.cycle,
             count(*)::text AS applications,
             count(*) FILTER (WHERE a.status IN ('ready_for_review', 'escalated'))::text AS awaiting_review,
             count(*) FILTER (WHERE a.status IN ('approved', 'rejected'))::text AS decided,
-            count(DISTINCT f.application_id)::text AS flagged
+            count(*) FILTER (WHERE EXISTS (
+              SELECT 1 FROM risk_flags f WHERE f.application_id = a.id
+            ))::text AS flagged
        FROM applications a
-       LEFT JOIN risk_flags f ON f.application_id = a.id
       GROUP BY a.cycle
       ORDER BY a.cycle DESC`,
   );

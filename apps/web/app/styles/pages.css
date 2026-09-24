@@ -719,6 +719,12 @@
   gap: 16px;
 }
 
+/* .card carries border and shadow but no padding; without this the text sat
+   flush against the border. */
+.security > .card {
+  padding: 22px 24px;
+}
+
 .security h2 {
   margin: 0 0 10px;
   font-size: 18px;
